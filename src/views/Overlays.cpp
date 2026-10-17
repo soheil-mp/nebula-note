@@ -13,6 +13,7 @@
 #include <QComboBox>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QDir>
 #include <QFontMetricsF>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -758,7 +759,10 @@ QWidget *SettingsPanel::workspacePage()
     auto *folder = new FlatButton(QStringLiteral("folder"), tr("Open folder"));
     folder->setFilled(true);
     connect(folder, &FlatButton::clicked, this, [] { QDesktopServices::openUrl(QUrl::fromLocalFile(Workspace::instance()->directory())); });
-    v->addWidget(settingRow(tr("Data folder"), ws->directory(), folder));
+    QString shownDir = QDir::toNativeSeparators(ws->directory());
+    if (const QString home = QDir::homePath(); shownDir.startsWith(home + QDir::separator()))
+        shownDir = QStringLiteral("~") + shownDir.mid(home.size());
+    v->addWidget(settingRow(tr("Data folder"), shownDir, folder));
     v->addWidget(separator());
     auto *backup = new FlatButton(QStringLiteral("shield"), tr("Back up now"));
     backup->setFilled(true);
@@ -774,7 +778,7 @@ QWidget *SettingsPanel::workspacePage()
         dismiss();
         emit importRequested();
     });
-    v->addWidget(settingRow(tr("Import"), tr("A Notion export (.zip or folder), Markdown files or folders, or a CSV file."), imp));
+    v->addWidget(settingRow(tr("Import"), tr("Notion exports, Markdown, HTML, Word, Evernote and CSV files, or a whole folder."), imp));
     v->addWidget(separator());
     auto *exp = new FlatButton(QStringLiteral("upload"), tr("Export all…"));
     exp->setFilled(true);
