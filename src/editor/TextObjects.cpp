@@ -14,6 +14,8 @@
 #include <QFontMetricsF>
 #include <QHash>
 #include <QImageReader>
+
+#include "ui/AnimatedMedia.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <QTextBlock>
@@ -430,7 +432,15 @@ void TextObjects::drawObject(QPainter *p, const QRectF &rect, QTextDocument *doc
             cache.insert(key, pm);
         }
         p->setClipPath(clip);
-        p->drawPixmap(imageRect.topLeft(), pm);
+        if (const QImage frame = AnimatedMedia::frame(media); !frame.isNull()) {
+            // GIFs play in place.
+            p->setRenderHint(QPainter::SmoothPixmapTransform);
+            const QSizeF fit = QSizeF(frame.size()).scaled(imageRect.size(), Qt::KeepAspectRatio);
+            p->drawImage(QRectF(imageRect.left(), imageRect.top(), fit.width(), fit.height()), frame);
+            AnimatedMedia::repaintOnNextFrame(*p, imageRect, media);
+        } else {
+            p->drawPixmap(imageRect.topLeft(), pm);
+        }
         Q_UNUSED(pos)
         p->setClipping(false);
         const bool active = m_ctx->hoveredImage == pos || m_ctx->selectedImage == pos;

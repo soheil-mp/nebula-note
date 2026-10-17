@@ -1,4 +1,7 @@
 #include "BlockFormat.h"
+#include <cmath>
+#include <QHash>
+#include <QFontMetricsF>
 
 #include "ui/Theme.h"
 
@@ -120,16 +123,16 @@ double spaceAbove(BlockType t, const Style &s)
     const double k = s.size / 16.0;
     switch (t) {
     case BlockType::Heading1:
-        return 26 * k;
+        return 32 * k;
     case BlockType::Heading2:
-        return 20 * k;
+        return 24 * k;
     case BlockType::Heading3:
-        return 14 * k;
+        return 18 * k;
     case BlockType::Heading4:
-        return 10 * k;
+        return 14 * k;
     case BlockType::Quote:
     case BlockType::Callout:
-        return 8 * k;
+        return 10 * k;
     case BlockType::Code:
     case BlockType::Image:
     case BlockType::Equation:
@@ -148,9 +151,10 @@ double spaceAbove(BlockType t, const Style &s)
     case BlockType::Table:
         return 10 * k;
     case BlockType::Divider:
-        return 6 * k;
+        return 8 * k;
     default:
-        return 3 * k;
+        // Text, lists, to-dos: Notion's 3px padding above and below plus 1px.
+        return 7 * k;
     }
 }
 
@@ -189,6 +193,47 @@ double spaceBelow(BlockType t, const Style &s)
     }
 }
 
+}
+
+double lineHeightPercent(BlockType type, const Style &style)
+{
+    // Qt's proportional height is relative to the font's natural line spacing
+    // (ascent + descent + leading, about 1.2× the size for Inter), not to the
+    // font size: convert the CSS-style multiple into that.
+    double multiple = 1.5;
+    switch (type) {
+    case BlockType::Title:
+        multiple = 1.2;
+        break;
+    case BlockType::Heading1:
+    case BlockType::Heading2:
+    case BlockType::Heading3:
+    case BlockType::Heading4:
+        multiple = 1.3;
+        break;
+    default:
+        break;
+    }
+    QString family = style.family;
+    if (type == BlockType::Title && !style.mono && family == Theme::uiFamily())
+        family = Theme::displayFamily();
+    if (type == BlockType::Code)
+        family = Theme::monoFamily();
+    const double px = headingSize(type, style);
+    static QHash<QString, double> cache;
+    const QString key = QStringLiteral("%1|%2|%3|%4").arg(family).arg(px).arg(baseWeight(type)).arg(multiple);
+    auto it = cache.constFind(key);
+    if (it != cache.constEnd())
+        return *it;
+    QFont f(family);
+    f.setPixelSize(qMax(1, qRound(px)));
+    f.setWeight(QFont::Weight(baseWeight(type)));
+    f.setHintingPreference(QFont::PreferNoHinting);
+    const QFontMetricsF fm(f);
+    const double natural = std::ceil(fm.ascent() + fm.descent() + qMax(0.0, fm.leading()));
+    const double percent = natural > 0 ? qBound(80.0, multiple * px / natural * 100.0, 200.0) : multiple * 100.0;
+    cache.insert(key, percent);
+    return percent;
 }
 
 double padTop(BlockType t, const Style &s)
@@ -293,26 +338,12 @@ QTextBlockFormat blockFormat(const Block &b, const Style &style)
     // The top margin is set by the editor's normalisation, which knows the
     // previous block; this is a sensible default for new blocks.
     f.setTopMargin(topMarginFor(b.type, BlockType::Paragraph, style, 0));
-    switch (b.type) {
-    case BlockType::Title:
-        f.setLineHeight(118, QTextBlockFormat::ProportionalHeight);
-        break;
-    case BlockType::Heading1:
-    case BlockType::Heading2:
-    case BlockType::Heading3:
-    case BlockType::Heading4:
-        f.setLineHeight(128, QTextBlockFormat::ProportionalHeight);
-        break;
-    case BlockType::Code:
-        f.setLineHeight(148, QTextBlockFormat::ProportionalHeight);
+    if (blockTypeIsAtomic(b.type))
+        f.setLineHeight(100, QTextBlockFormat::ProportionalHeight);
+    else
+        f.setLineHeight(lineHeightPercent(b.type, style), QTextBlockFormat::ProportionalHeight);
+    if (b.type == BlockType::Code)
         f.setNonBreakableLines(false);
-        break;
-    default:
-        if (blockTypeIsAtomic(b.type))
-            f.setLineHeight(100, QTextBlockFormat::ProportionalHeight);
-        else
-            f.setLineHeight(150, QTextBlockFormat::ProportionalHeight);
-    }
     if (b.type == BlockType::Image) {
         if (b.align == QLatin1String("left"))
             f.setAlignment(Qt::AlignLeft);

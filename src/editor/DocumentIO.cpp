@@ -152,8 +152,7 @@ double columnGap(const Style &style)
 
 QTextBlockFormat cellBlockFormat(const Style &style)
 {
-    QTextBlockFormat f = blockFormat(Block{}, style);
-    f.setLineHeight(138, QTextBlockFormat::ProportionalHeight);
+    QTextBlockFormat f = blockFormat(Block{}, style); // text line height (1.5× the size)
     f.setTopMargin(0);
     f.setLeftMargin(0);
     f.setRightMargin(0);

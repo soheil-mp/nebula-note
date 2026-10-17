@@ -5,6 +5,7 @@
 #include "core/Templates.h"
 #include "core/Workspace.h"
 #include "editor/BlockEditor.h"
+#include "ui/AnimatedMedia.h"
 #include "ui/Plurals.h"
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
@@ -23,6 +24,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QScrollArea>
+#include <QSet>
+#include <QPainter>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
@@ -955,6 +958,60 @@ private slots:
         QVERIFY(body->geometry().right() < int(ed->width() * 0.7));
         QVERIFY(body->geometry().width() > ed->width() / 3);
         m_ws->deleteForever(page);
+    }
+
+    void animatedGifsPlayWhilePainted()
+    {
+        // A two-frame GIF: it plays where it's painted and stops when nothing paints it.
+        const QByteArray gif = QByteArray::fromBase64(
+            "R0lGODlhCAAIAIEAAMjIyAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQABAAAACwAAAAACAAIAAAIDwABCBxIsKDBgwgTKkwYEAAh+QQBBAABACwAAAAACAAIAIEoKCgAAAAAAAAAAAAIDwABCBxIsKDBgwgTKkwYEAA7");
+        const QString media = m_ws->importMediaData(gif, QStringLiteral("gif"));
+        QVERIFY(AnimatedMedia::isAnimated(media));
+        QImage still(4, 4, QImage::Format_RGB32);
+        still.fill(Qt::red);
+        QByteArray png;
+        {
+            QBuffer buf(&png);
+            buf.open(QIODevice::WriteOnly);
+            still.save(&buf, "PNG");
+        }
+        QVERIFY(!AnimatedMedia::isAnimated(m_ws->importMediaData(png, QStringLiteral("png"))));
+        struct Canvas : QWidget {
+            QString media;
+            int paints = 0;
+            QSet<QRgb> colours;
+            void paintEvent(QPaintEvent *) override
+            {
+                QPainter p(this);
+                const QImage f = AnimatedMedia::frame(media);
+                if (f.isNull())
+                    return;
+                ++paints;
+                colours.insert(f.pixel(2, 2));
+                p.drawImage(rect(), f);
+                AnimatedMedia::repaintOnNextFrame(p, rect(), media);
+            }
+        } canvas;
+        canvas.media = media;
+        canvas.resize(40, 40);
+        canvas.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&canvas));
+        QTest::qWait(400);
+        QVERIFY2(canvas.paints >= 4, qPrintable(QString::number(canvas.paints)));
+        QCOMPARE(canvas.colours.size(), 2); // both frames were shown
+        // Hidden: no more repaints are asked for.
+        canvas.hide();
+        QTest::qWait(150);
+        const int before = canvas.paints;
+        QTest::qWait(300);
+        QCOMPARE(canvas.paints, before);
+        // Reduce motion keeps the first frame.
+        Settings::instance().reduceMotion = true;
+        canvas.paints = 0;
+        canvas.show();
+        QTest::qWait(400);
+        QVERIFY(canvas.paints <= 2);
+        Settings::instance().reduceMotion = false;
     }
 
     void peekOpensRowsBesideTheDatabase()

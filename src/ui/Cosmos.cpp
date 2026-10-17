@@ -1,5 +1,7 @@
 #include "Cosmos.h"
 
+#include "AnimatedMedia.h"
+
 #include "core/Workspace.h"
 
 #include <QApplication>
@@ -778,6 +780,26 @@ void paintCover(QPainter &p, const QRectF &rect, const QString &spec, double pos
         return;
     const qreal dpr = p.device() ? p.device()->devicePixelRatio() : 1.0;
     const QSize size = rect.size().toSize();
+    if (spec.startsWith(QLatin1String("media:")) && AnimatedMedia::isAnimated(spec.mid(6))) {
+        // Animated covers (GIFs) play: draw the current frame the same way.
+        const QImage frame = AnimatedMedia::frame(spec.mid(6));
+        if (!frame.isNull()) {
+            const double h = rect.width() * frame.height() / qMax(1, frame.width());
+            p.save();
+            p.setClipRect(rect);
+            p.setRenderHint(QPainter::SmoothPixmapTransform);
+            if (h < rect.height()) {
+                const double w = rect.height() * frame.width() / qMax(1, frame.height());
+                p.drawImage(QRectF(rect.center().x() - w / 2, rect.top(), w, rect.height()), frame);
+            } else {
+                const double y = rect.top() - (h - rect.height()) * qBound(0.0, position, 1.0);
+                p.drawImage(QRectF(rect.left(), y, rect.width(), h), frame);
+            }
+            p.restore();
+            AnimatedMedia::repaintOnNextFrame(p, rect, spec.mid(6));
+            return;
+        }
+    }
     if (spec.startsWith(QLatin1String("media:"))) {
         // Image covers are scaled to the width once; pick the band here.
         const QPixmap pm = coverPixmap(spec, QSize(size.width(), size.height()), dpr);

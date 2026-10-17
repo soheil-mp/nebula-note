@@ -120,6 +120,10 @@ QList<Span> captionOf(const QTextBlock &block);
 
 // Metrics shared by layout and painting code.
 double headingSize(BlockType type, const Style &style);
+// Line height for a block as Qt's proportional percentage, worked out so the
+// line box is a fixed multiple of the font size like CSS line-height (1.5 for
+// text, 1.3 for headings, 1.2 for the title) whatever the font's own metrics.
+double lineHeightPercent(BlockType type, const Style &style);
 double padTop(BlockType type, const Style &style);    // inside backgrounds (code, callout)
 double padBottom(BlockType type, const Style &style);
 double blockLeftInset(BlockType type, const Style &style); // marker gutter / padding

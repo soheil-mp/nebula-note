@@ -1,5 +1,7 @@
 #include "Icons.h"
 
+#include "AnimatedMedia.h"
+
 #include "Theme.h"
 #include "core/Workspace.h"
 
@@ -358,7 +360,11 @@ void paintPageIcon(QPainter &p, const QRectF &rect, const QString &icon, const Q
     if (icon.startsWith(QLatin1String("media:"))) {
         static QHash<QString, QImage> cache;
         const QString media = icon.mid(6);
-        QImage img = cache.value(media);
+        // Animated icons (GIFs) play.
+        const QImage frame = AnimatedMedia::frame(media);
+        if (!frame.isNull())
+            AnimatedMedia::repaintOnNextFrame(p, rect, media);
+        QImage img = frame.isNull() ? cache.value(media) : frame;
         if (img.isNull()) {
             if (Workspace *ws = Workspace::instance()) {
                 QImageReader reader(ws->mediaPath(media));
