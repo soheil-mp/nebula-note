@@ -244,7 +244,7 @@ private slots:
         opt.importImage = [](const QString &src) { return src.section(QLatin1Char('/'), -1); };
         const QList<Block> b = Markdown::toBlocks(QStringLiteral("![The Orion nebula](sky/orion.png)\n\n"
                                                                  "![image.png](Page%20abc/image%201.png)\n\n"
-                                                                 "![orion](sky/orion.png)\n"),
+                                                                 "![Orion](sky/orion.png)\n"),
                                                   opt);
         QCOMPARE(b.size(), 3);
         QCOMPARE(plain(b[0].caption), QStringLiteral("The Orion nebula")); // describes the picture

@@ -1133,7 +1133,8 @@ private:
                 const QString alt = decodeEntities(m.captured(1)).trimmed();
                 const QString file = QUrl::fromPercentEncoding(src.section(QLatin1Char('/'), -1).toUtf8());
                 const QString stem = file.section(QLatin1Char('.'), 0, -2);
-                if (!alt.isEmpty() && alt != file && alt != stem && !fileName.match(alt).hasMatch()
+                if (!alt.isEmpty() && alt.compare(file, Qt::CaseInsensitive) != 0 && alt.compare(stem, Qt::CaseInsensitive) != 0
+                    && !fileName.match(alt).hasMatch()
                     && alt.compare(QLatin1String("image"), Qt::CaseInsensitive) != 0)
                     b.caption = normalizeSpans(parseInline(alt, m_opt));
                 addBlock(b);
