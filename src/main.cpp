@@ -118,7 +118,24 @@ void run(MainWindow &window, const QString &action)
         mouse(window, point(), Qt::RightButton, true);
     else if (action.startsWith(QLatin1String("hoverat:")))
         mouse(window, point(), Qt::NoButton, false);
-    else if (action.startsWith(QLatin1String("enter:"))) {
+    else if (action.startsWith(QLatin1String("drag:"))) {
+        // drag:x1,y1,x2,y2 — press at the first point and move to the second
+        // without letting go, so the screenshot shows the drop guides.
+        const QStringList n = arg.split(QLatin1Char(','));
+        const QPoint from(n.value(0).toInt(), n.value(1).toInt()), to(n.value(2).toInt(), n.value(3).toInt());
+        QPoint local;
+        const QPoint g0 = window.mapToGlobal(from);
+        QWidget *w = targetAt(window, g0, &local);
+        QMouseEvent hover(QEvent::MouseMove, local, g0, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(w, &hover);
+        QMouseEvent press(QEvent::MouseButtonPress, local, g0, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(w, &press);
+        for (int i = 1; i <= 8; ++i) {
+            const QPoint g = window.mapToGlobal(from + (to - from) * i / 8);
+            QMouseEvent move(QEvent::MouseMove, w->mapFromGlobal(QPointF(g)), QPointF(g), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(w, &move);
+        }
+    } else if (action.startsWith(QLatin1String("enter:"))) {
         // Offscreen has no real pointer: tell the widget under the point, and
         // its parents, that the mouse came in, then move over it.
         const QPoint global = window.mapToGlobal(point());
