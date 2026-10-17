@@ -10,6 +10,7 @@
 #include <QClipboard>
 #include <QHBoxLayout>
 #include <QJsonArray>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -130,15 +131,15 @@ DatabaseBody::DatabaseBody(QWidget *parent, bool inlineMode)
         ws->setSchema(m_dbId, s);
         emit toast(tr("Database unlocked"));
     });
+    // The magnifier opens into the field (which has its own); an empty field
+    // folds back when it loses focus, and Esc clears and folds it.
     connect(m_searchBtn, &FlatButton::clicked, this, [this] {
-        m_search->setVisible(!m_search->isVisible());
-        if (m_search->isVisible())
-            m_search->setFocus();
-        else {
-            m_search->clear();
-            refresh();
-        }
+        m_search->show();
+        m_searchBtn->hide();
+        m_search->setFocus();
+        relayout();
     });
+    m_search->installEventFilter(this);
     connect(m_search, &QLineEdit::textChanged, this, &DatabaseBody::scheduleRefresh);
 
     // Esc clears ticked rows.
@@ -221,6 +222,7 @@ void DatabaseBody::setSearchText(const QString &text)
 {
     m_search->setVisible(!text.isEmpty());
     m_search->setText(text);
+    m_searchBtn->setVisible(text.isEmpty() && currentView().type != ViewType::Form);
     refresh();
 }
 
@@ -489,7 +491,7 @@ void DatabaseBody::rebuildTabs()
     const bool form = v.type == ViewType::Form;
     m_filterBtn->setVisible(!form);
     m_sortBtn->setVisible(!form);
-    m_searchBtn->setVisible(!form);
+    m_searchBtn->setVisible(!form && m_search->isHidden());
 }
 
 void DatabaseBody::fitTabs()
@@ -679,7 +681,7 @@ void DatabaseBody::relayout()
     // out of the toolbar, New shows just its icon and templates hide.
     const bool compact = colW < 460;
     const bool form = currentView().type == ViewType::Form;
-    m_searchBtn->setVisible(!compact && !form);
+    m_searchBtn->setVisible(!compact && !form && m_search->isHidden());
     m_newMenuBtn->setVisible(!compact);
     m_newBtn->setText(compact ? QString() : tr("New"));
     m_tabsBar->setGeometry(m_left - 8, y, colW + 8, kBarH);
@@ -719,6 +721,22 @@ void DatabaseBody::relayout()
 
 bool DatabaseBody::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched == m_search) {
+        // Esc belongs to the field while it's open, not to the view's shortcut.
+        if (event->type() == QEvent::ShortcutOverride && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+            event->accept();
+            return true;
+        }
+        const bool esc = event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape;
+        if (esc || (event->type() == QEvent::FocusOut && m_search->text().isEmpty())) {
+            if (esc && !m_search->text().isEmpty())
+                m_search->clear();
+            m_search->hide();
+            m_searchBtn->setVisible(currentView().type != ViewType::Form);
+            relayout();
+            return esc;
+        }
+    }
     if (watched == m_hscroll && (event->type() == QEvent::Enter || event->type() == QEvent::Leave)) {
         m_hscroll->horizontalScrollBar()->setStyleSheet(
             event->type() == QEvent::Enter ? QString() : QStringLiteral("QScrollBar::handle:horizontal { background: transparent; }"));

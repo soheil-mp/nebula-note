@@ -580,6 +580,20 @@ private slots:
         }
     }
 
+    void searchOpensFromItsButton()
+    {
+        resetView();
+        m_body->m_searchBtn->click();
+        QApplication::processEvents();
+        QVERIFY(!m_body->m_search->isHidden());
+        QVERIFY(m_body->m_searchBtn->isHidden()); // one magnifier, in the field
+        m_body->m_search->setFocus();
+        QTest::keyClick(m_body->m_search, Qt::Key_Escape);
+        QApplication::processEvents();
+        QVERIFY(m_body->m_search->isHidden());
+        QVERIFY(!m_body->m_searchBtn->isHidden());
+    }
+
     // ---- form ----------------------------------------------------------------------
 
     void formSubmitsRowsAndChecksRequired()
