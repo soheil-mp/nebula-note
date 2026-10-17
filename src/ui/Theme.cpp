@@ -103,7 +103,7 @@ QLineEdit:focus { border-color: %5; }
 QAbstractScrollArea { background: transparent; border: none; }
 QCheckBox { color: %2; spacing: 9px; }
 QCheckBox::indicator { width: 15px; height: 15px; border: 1px solid #5a5a64; border-radius: 4px; background: transparent; }
-QCheckBox::indicator:hover { border-color: %9; }
+QCheckBox::indicator:hover { border-color: %8; }
 QCheckBox::indicator:checked { background: %7; border-color: %7; image: url(:/icons/ui/check-dark.svg); }
 QComboBox { background: %6; color: %2; border: 1px solid %3; border-radius: 7px; padding: 4px 28px 4px 10px; combobox-popup: 0; }
 QComboBox:hover { border-color: #3a3a43; }
@@ -114,12 +114,12 @@ QComboBox QAbstractItemView { background: %1; color: %2; border: 1px solid %3; b
                               selection-background-color: %6; selection-color: %7; }
 QComboBox QAbstractItemView::item { min-height: 26px; padding: 0 8px; border-radius: 5px; }
 QSlider::groove:horizontal { height: 4px; background: %3; border-radius: 2px; }
-QSlider::sub-page:horizontal { background: %9; border-radius: 2px; }
+QSlider::sub-page:horizontal { background: %8; border-radius: 2px; }
 QSlider::handle:horizontal { background: %7; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }
 QSlider::handle:horizontal:hover { background: #ffffff; }
 )")
         .arg(hex(c.slate), hex(c.moon), hex(c.ash), hex(withAlpha(c.smoke, 0.75)), hex(c.dust), hex(c.graphite),
-             hex(c.starlight), hex(c.dust), hex(c.mist));
+             hex(c.starlight), hex(c.mist));
 }
 
 // ---- shades -------------------------------------------------------------------

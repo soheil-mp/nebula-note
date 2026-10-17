@@ -27,6 +27,7 @@
 #include <QTemporaryDir>
 #include <QStandardPaths>
 #include <QSignalSpy>
+#include <QRegularExpression>
 #include <QScrollBar>
 #include <QTest>
 #include <QTextBlock>
@@ -80,6 +81,14 @@ private slots:
     void cleanupTestCase()
     {
         delete m_win;
+    }
+
+    void styleSheetIsComplete()
+    {
+        // Every placeholder filled (a removed rule once shifted the colours).
+        const QString css = Theme::styleSheet();
+        QVERIFY2(!css.contains(QRegularExpression(QStringLiteral("%\\d"))), qPrintable(css));
+        QVERIFY(css.contains(Theme::colors().mist.name(QColor::HexArgb), Qt::CaseInsensitive));
     }
 
     void visitsEveryPageAndView()
