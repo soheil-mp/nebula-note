@@ -195,6 +195,40 @@ void BlockEditor::paintEvent(QPaintEvent *e)
     // ---- over the text ----
     QPainter p(viewport());
     p.setRenderHint(QPainter::Antialiasing);
+    // Blocks being dragged: a veil over the originals, and a ghost of the
+    // first one following the pointer.
+    if (m_draggingBlocks) {
+        const QTextBlock first = doc->findBlockByNumber(m_dragRange.first);
+        const QTextBlock last = doc->findBlockByNumber(m_dragRange.second);
+        if (first.isValid() && last.isValid()) {
+            const QRectF a = blockRect(first), b = blockRect(last);
+            const QRectF veil(blockLeft(first) - 4, a.top() - 2, blockRight(first) - blockLeft(first) + 8, b.bottom() - a.top() + 4);
+            p.fillRect(veil, Theme::withAlpha(c.basalt, 0.55));
+            QString text = first.text().simplified();
+            text.remove(QChar::ObjectReplacementCharacter);
+            if (text.isEmpty())
+                text = blockTypeName(typeOf(first));
+            const int more = m_dragRange.second - m_dragRange.first;
+            p.setFont(Theme::uiFont(13, QFont::Medium));
+            const QFontMetricsF fm(p.font());
+            const QString shown = fm.elidedText(text, Qt::ElideRight, 260);
+            const QString count = more > 0 ? QStringLiteral("+%1").arg(more) : QString();
+            const double w = fm.horizontalAdvance(shown) + (count.isEmpty() ? 0 : fm.horizontalAdvance(count) + 10) + 24;
+            const QRectF ghost(m_dragPoint.x() + 14, m_dragPoint.y() + 8, w, 28);
+            p.setOpacity(0.94);
+            Theme::paintSoftShadow(p, ghost, 7, 8, 1.1);
+            p.setPen(QPen(c.ash, 1));
+            p.setBrush(c.graphite);
+            p.drawRoundedRect(ghost.adjusted(0.5, 0.5, -0.5, -0.5), 7, 7);
+            p.setPen(c.starlight);
+            p.drawText(ghost.adjusted(12, 0, -12, 0), Qt::AlignVCenter, shown);
+            if (!count.isEmpty()) {
+                p.setPen(c.fog);
+                p.drawText(ghost.adjusted(12, 0, -12, 0), Qt::AlignVCenter | Qt::AlignRight, count);
+            }
+            p.setOpacity(1.0);
+        }
+    }
     for (const QTextBlock &blk : visible) {
         const QRectF br = blockRect(blk);
         const double right = blockRight(blk);

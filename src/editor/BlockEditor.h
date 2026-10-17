@@ -334,6 +334,7 @@ private:
     QPoint m_pressPos;
     QPair<int, int> m_dragRange{-1, -1};
     DropTarget m_drop;
+    QPoint m_dragPoint; // the pointer during a block drag (viewport coordinates)
 
     // column resize
     ColumnGap m_hoverGap;

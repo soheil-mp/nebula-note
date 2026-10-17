@@ -541,6 +541,7 @@ void BlockEditor::mouseMoveEvent(QMouseEvent *e)
                 m_autoScroll.start();
         }
         if (m_draggingBlocks) {
+            m_dragPoint = pos;
             DropTarget t = dropTargetAt(pos);
             // Can't drop into itself (or right where it already is).
             if (t.block >= m_dragRange.first && t.block <= m_dragRange.second)

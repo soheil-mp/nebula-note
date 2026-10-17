@@ -21,6 +21,7 @@
 #include <QMessageBox>
 #include <QKeySequence>
 #include <QContextMenuEvent>
+#include <QCursor>
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QPainter>
@@ -132,6 +133,7 @@ void run(MainWindow &window, const QString &action)
         QApplication::sendEvent(w, &press);
         for (int i = 1; i <= 8; ++i) {
             const QPoint g = window.mapToGlobal(from + (to - from) * i / 8);
+            QCursor::setPos(g); // code that re-reads the pointer sees it here
             QMouseEvent move(QEvent::MouseMove, w->mapFromGlobal(QPointF(g)), QPointF(g), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
             QApplication::sendEvent(w, &move);
         }
