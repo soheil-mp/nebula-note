@@ -27,6 +27,7 @@
 #include <QTemporaryDir>
 #include <QStandardPaths>
 #include <QSignalSpy>
+#include <QScrollBar>
 #include <QTest>
 #include <QTextBlock>
 
@@ -292,6 +293,32 @@ private slots:
         settle(80);
         QVERIFY(!backlinks->isHidden());
         QCOMPARE(backlinks->height(), 34); // just the count; the list opens in a menu
+    }
+
+    void pageStyleKeepsScrollAndTitleFace()
+    {
+        m_win->navigate(m_welcome);
+        settle(80);
+        auto *page = find<PageView>();
+        page->editor()->setFocus();
+        settle();
+        page->verticalScrollBar()->setValue(420);
+        settle();
+        const int before = page->verticalScrollBar()->value();
+        QVERIFY(before > 300);
+        PageOptions o = m_ws->options(m_welcome);
+        o.font = QStringLiteral("serif");
+        m_ws->setOptions(m_welcome, o);
+        settle(80);
+        QVERIFY(qAbs(page->verticalScrollBar()->value() - before) <= 2);
+        auto *title = page->findChild<TitleEdit *>();
+        QVERIFY(title);
+        QCOMPARE(title->font().family(), Theme::serifFamily());
+        o.font = QStringLiteral("sans");
+        m_ws->setOptions(m_welcome, o);
+        settle(80);
+        QCOMPARE(title->font().family(), Theme::displayFamily());
+        QVERIFY(qAbs(page->verticalScrollBar()->value() - before) <= 2);
     }
 
     void inboxCollectsRemindersAndComments()
