@@ -118,6 +118,20 @@ void run(MainWindow &window, const QString &action)
         mouse(window, point(), Qt::RightButton, true);
     else if (action.startsWith(QLatin1String("hoverat:")))
         mouse(window, point(), Qt::NoButton, false);
+    else if (action.startsWith(QLatin1String("enter:"))) {
+        // Offscreen has no real pointer: tell the widget under the point, and
+        // its parents, that the mouse came in, then move over it.
+        const QPoint global = window.mapToGlobal(point());
+        QPoint local;
+        for (QWidget *w = targetAt(window, global, &local); w; w = w->parentWidget()) {
+            w->setAttribute(Qt::WA_UnderMouse, true);
+            QEnterEvent enter(w->mapFromGlobal(QPointF(global)), w->mapFromGlobal(QPointF(global)), QPointF(global));
+            QApplication::sendEvent(w, &enter);
+            if (w->isWindow())
+                break;
+        }
+        mouse(window, point(), Qt::NoButton, false);
+    }
     else if (action.startsWith(QLatin1String("type:"))) {
         QWidget *w = QApplication::focusWidget() ? QApplication::focusWidget() : &window;
         for (const QChar ch : arg) {

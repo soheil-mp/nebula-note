@@ -387,10 +387,11 @@ private:
                 l->setFont(Theme::uiFont(13));
                 l->setStyleSheet(QStringLiteral("color: #9a9aa6;"));
                 l->setFixedWidth(70);
+                l->setMinimumHeight(30); // as tall as the combos beside it
                 l->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
                 conn = l;
             }
-            row->addWidget(conn, 0, Qt::AlignTop);
+            row->addWidget(conn, 0, Qt::AlignVCenter);
             QList<int> here = path;
             here.append(i);
             auto *more = new FlatButton(QStringLiteral("more"));
