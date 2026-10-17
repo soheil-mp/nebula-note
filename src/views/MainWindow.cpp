@@ -118,7 +118,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_sidebar, &Sidebar::inboxRequested, this, &MainWindow::openInbox);
     connect(m_sidebar, &Sidebar::importRequested, this, [this] { importFiles(); });
     connect(m_sidebar, &Sidebar::settingsRequested, this, &MainWindow::openSettings);
-    connect(m_sidebar, &Sidebar::trashRequested, this, &MainWindow::openTrash);
+    connect(m_sidebar, &Sidebar::trashRequested, this, [this](const QPoint &pos) { openTrash(pos); });
     connect(m_sidebar, &Sidebar::collapseRequested, this, &MainWindow::toggleSidebar);
     connect(m_sidebar, &Sidebar::pageMenuRequested, this, [this](const QString &id, const QPoint &pos) { showPageMenu(id, pos, true); });
     connect(m_sidebar, &Sidebar::widthDragged, this, &MainWindow::applySidebarWidth);
@@ -528,7 +528,7 @@ void MainWindow::runAction(const QString &action)
     else if (action == QLatin1String("templates"))
         openTemplates();
     else if (action == QLatin1String("trash"))
-        openTrash(mapToGlobal(QPoint(m_sidebar->width() + 8, height() - 420)));
+        openTrash(mapToGlobal(QPoint(m_sidebar->width() + 8, height() - 12)));
     else if (action == QLatin1String("select") && m_stack->currentWidget() == m_page) {
         BlockEditor *ed = m_page->editor();
         ed->setFocus();
@@ -630,7 +630,7 @@ void MainWindow::openQuickFind()
         else if (a == QLatin1String("sidebar"))
             toggleSidebar();
         else if (a == QLatin1String("trash"))
-            openTrash(mapToGlobal(QPoint(width() / 2 - 200, 120)));
+            openTrash(mapToGlobal(QPoint(width() / 2 - 200, 120)), false);
     });
     qf->open();
 }
@@ -661,16 +661,18 @@ void MainWindow::openTemplates(const QString &targetPage)
     g->open();
 }
 
-void MainWindow::openTrash(const QPoint &globalPos)
+void MainWindow::openTrash(const QPoint &globalPos, bool growUp)
 {
+    // From the sidebar the card sits beside the Trash item and grows upwards.
     auto *t = new TrashPopover(this);
-    t->popupAt(globalPos);
+    t->adjustSize();
+    t->popupAt(growUp ? globalPos - QPoint(0, t->height() - 2 * Popover::kShadow + 6) : globalPos);
 }
 
 void MainWindow::importFiles(const QString &parentId)
 {
     QMenu *menu = Theme::makeMenu(this);
-    menu->addSection(tr("Import"));
+    Theme::addMenuSection(menu, tr("Import"));
     QAction *notion = menu->addAction(Icons::icon(QStringLiteral("download")), tr("Notion export (.zip, Markdown or HTML)…"));
     QAction *files = menu->addAction(Icons::icon(QStringLiteral("page")), tr("Markdown, HTML, text or CSV files…"));
     QAction *word = menu->addAction(Icons::icon(QStringLiteral("file")), tr("Word document (.docx)…"));
@@ -819,7 +821,7 @@ void MainWindow::showPageMenu(const QString &pageId, const QPoint &globalPos, bo
     if (!fromSidebar && !m->isDatabase()) {
         // Page style, Notion's ••• menu.
         const PageOptions o = ws->options(pageId);
-        menu->addSection(tr("Style"));
+        Theme::addMenuSection(menu, tr("Style"));
         const QList<QPair<QString, QString>> fonts = {{QStringLiteral("sans"), tr("Default")}, {QStringLiteral("serif"), tr("Serif")},
                                                       {QStringLiteral("mono"), tr("Mono")}};
         for (const auto &[key, name] : fonts) {
@@ -871,7 +873,7 @@ void MainWindow::showPageMenu(const QString &pageId, const QPoint &globalPos, bo
         };
         option(tr("Table of contents in the margin"), o.showToc, [](PageOptions &po, bool v) { po.showToc = v; });
         option(tr("Page discussions"), o.showDiscussion, [](PageOptions &po, bool v) { po.showDiscussion = v; });
-        custom->addSection(tr("Backlinks"));
+        Theme::addMenuSection(custom, tr("Backlinks"));
         for (const auto &[key, name] : QList<QPair<QString, QString>>{{QStringLiteral("expanded"), tr("Show expanded")},
                                                                       {QStringLiteral("popover"), tr("Show in popover")},
                                                                       {QStringLiteral("off"), tr("Off")}}) {
@@ -887,7 +889,7 @@ void MainWindow::showPageMenu(const QString &pageId, const QPoint &globalPos, bo
         menu->addAction(Icons::icon(QStringLiteral("history")), tr("Version history"), this, [this, pageId] { openVersionHistory(pageId); });
         menu->addSeparator();
     } else {
-        menu->addSection(ws->title(pageId));
+        Theme::addMenuSection(menu, ws->title(pageId));
     }
     if (fromSidebar) {
         menu->addAction(Icons::icon(QStringLiteral("external")), tr("Open"), this, [this, pageId] { navigate(pageId); });

@@ -84,9 +84,20 @@ class SearchField : public QLineEdit
     Q_OBJECT
 public:
     explicit SearchField(const QString &placeholder, QWidget *parent = nullptr);
+    // Where the magnifier sits; the text should start after it.
+    void setIconGeometry(double x, double size)
+    {
+        m_iconX = x;
+        m_iconSize = size;
+        update();
+    }
 
 protected:
     void paintEvent(QPaintEvent *) override;
+
+private:
+    double m_iconX = 10;
+    double m_iconSize = 15;
 };
 
 // A transient message at the bottom of the window, with an optional action.

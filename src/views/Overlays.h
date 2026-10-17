@@ -6,6 +6,7 @@
 #include <QVariantAnimation>
 #include <QWidget>
 
+class QScrollArea;
 class QStackedWidget;
 
 // A dimmed full-window layer with a centred card; Esc or a click outside closes it.
@@ -113,4 +114,6 @@ private:
     void refresh();
     SearchField *m_search;
     class TrashList *m_list;
+    QScrollArea *m_scroll;
+    FlatButton *m_empty;
 };

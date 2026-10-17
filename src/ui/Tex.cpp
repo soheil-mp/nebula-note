@@ -641,8 +641,12 @@ private:
         h->xs.append(0);
         const QFontMetricsF fm(mathFont(px(), Shape::Upright));
         double supShift = 0, subShift = 0;
+        // As in TeX, scripts on a single letter sit at a fixed height (so
+        // a², b² and c² line up); only built-up bases push them further.
+        const auto *glyph = dynamic_cast<const GlyphBox *>(base.get());
+        const bool letter = glyph && glyph->text.size() <= 2 && !base->limits;
         if (sup)
-            supShift = qMax(base->a - fm.xHeight() * 0.45, fm.xHeight() * 0.85) + qMax(0.0, sup->d * 0.3);
+            supShift = (letter ? fm.xHeight() * 0.9 : qMax(base->a - fm.xHeight() * 0.45, fm.xHeight() * 0.85)) + qMax(0.0, sup->d * 0.3);
         if (sub)
             subShift = qMax(base->d + fm.xHeight() * 0.1, fm.xHeight() * 0.35);
         if (sup && sub) {
@@ -1246,7 +1250,9 @@ private:
             return nullptr;
         if (bigOps().contains(name)) {
             const auto op = bigOps().value(name);
-            const double size = display() ? px() * 1.55 : px() * 1.15;
+            // Integral signs are drawn short in text fonts: stretch them more.
+            const bool integral = name.contains(QLatin1String("int"));
+            const double size = display() ? px() * (integral ? 2.0 : 1.55) : px() * (integral ? 1.3 : 1.15);
             auto b = glyph(QString::fromUtf8(op.first), mathFont(size, Shape::Upright), Kind::Op);
             // Centre on the axis.
             const double shift = (b->a - b->d) / 2 - axis();

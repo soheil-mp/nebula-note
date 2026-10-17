@@ -5,9 +5,11 @@
 #include <QApplication>
 #include <QFontDatabase>
 #include <QFontMetricsF>
+#include <QLabel>
 #include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
+#include <QWidgetAction>
 
 namespace Theme
 {
@@ -86,32 +88,43 @@ QString styleSheet()
     auto hex = [](const QColor &col) { return col.name(QColor::HexArgb); };
     return QStringLiteral(R"(
 QToolTip { background: %1; color: %2; border: 1px solid %3; border-radius: 7px; padding: 5px 8px; font-size: 12px; }
-QScrollBar:vertical { background: transparent; width: 10px; margin: 2px 2px 2px 0; }
-QScrollBar::handle:vertical { background: %4; border-radius: 3px; min-height: 36px; margin: 0 2px; }
-QScrollBar::handle:vertical:hover { background: %5; margin: 0 1px; border-radius: 4px; }
-QScrollBar:horizontal { background: transparent; height: 10px; margin: 0 2px 2px 2px; }
-QScrollBar::handle:horizontal { background: %4; border-radius: 3px; min-width: 36px; margin: 2px 0; }
-QScrollBar::handle:horizontal:hover { background: %5; margin: 1px 0; border-radius: 4px; }
+QScrollBar:vertical { background: transparent; width: 9px; margin: 3px 2px 3px 0; }
+QScrollBar::handle:vertical { background: %4; border-radius: 3px; min-height: 36px; margin: 0 1px; }
+QScrollBar::handle:vertical:hover, QScrollBar::handle:vertical:pressed { background: %5; margin: 0; border-radius: 3px; }
+QScrollBar:horizontal { background: transparent; height: 9px; margin: 0 3px 2px 3px; }
+QScrollBar::handle:horizontal { background: %4; border-radius: 3px; min-width: 36px; margin: 1px 0; }
+QScrollBar::handle:horizontal:hover, QScrollBar::handle:horizontal:pressed { background: %5; margin: 0; border-radius: 3px; }
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 QLineEdit { background: %6; color: %2; border: 1px solid %3; border-radius: 7px; padding: 5px 9px;
             selection-background-color: #45454f; selection-color: %7; }
+QLineEdit:hover { border-color: #3a3a43; }
 QLineEdit:focus { border-color: %5; }
 QAbstractScrollArea { background: transparent; border: none; }
 QMenu { background: %1; color: %2; border: 1px solid %3; border-radius: 10px; padding: 5px; }
-QMenu::item { padding: 6px 26px 6px 10px; border-radius: 6px; margin: 0 1px; }
+QMenu::item { padding: 6px 30px 6px 10px; border-radius: 6px; margin: 0 1px; }
 QMenu::item:selected { background: %6; color: %7; }
 QMenu::item:disabled { color: %8; }
 QMenu::icon { padding-left: 8px; }
-QMenu::separator { height: 1px; background: %3; margin: 5px 6px; }
-QMenu::right-arrow { width: 0; }
-QCheckBox { color: %2; spacing: 8px; }
-QComboBox { background: %6; color: %2; border: 1px solid %3; border-radius: 7px; padding: 4px 10px; }
-QComboBox::drop-down { border: none; width: 18px; }
-QComboBox QAbstractItemView { background: %1; color: %2; border: 1px solid %3; selection-background-color: %6; outline: none; }
+QMenu::separator { height: 1px; background: %3; margin: 5px 8px; }
+QMenu::right-arrow { image: url(:/icons/ui/chevron-right.svg); width: 12px; height: 12px; margin-right: 8px; }
+QMenu::indicator { width: 14px; height: 14px; left: 6px; }
+QCheckBox { color: %2; spacing: 9px; }
+QCheckBox::indicator { width: 15px; height: 15px; border: 1px solid #5a5a64; border-radius: 4px; background: transparent; }
+QCheckBox::indicator:hover { border-color: %9; }
+QCheckBox::indicator:checked { background: %7; border-color: %7; image: url(:/icons/ui/check-dark.svg); }
+QComboBox { background: %6; color: %2; border: 1px solid %3; border-radius: 7px; padding: 4px 28px 4px 10px; combobox-popup: 0; }
+QComboBox:hover { border-color: #3a3a43; }
+QComboBox:on { border-color: %5; }
+QComboBox::drop-down { border: none; width: 24px; subcontrol-origin: padding; subcontrol-position: center right; }
+QComboBox::down-arrow { image: url(:/icons/ui/chevron-down.svg); width: 12px; height: 12px; }
+QComboBox QAbstractItemView { background: %1; color: %2; border: 1px solid %3; border-radius: 8px; padding: 4px; outline: none; icon-size: 14px;
+                              selection-background-color: %6; selection-color: %7; }
+QComboBox QAbstractItemView::item { min-height: 26px; padding: 0 8px; border-radius: 5px; }
 QSlider::groove:horizontal { height: 4px; background: %3; border-radius: 2px; }
 QSlider::sub-page:horizontal { background: %9; border-radius: 2px; }
 QSlider::handle:horizontal { background: %7; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }
+QSlider::handle:horizontal:hover { background: #ffffff; }
 )")
         .arg(hex(c.slate), hex(c.moon), hex(c.ash), hex(withAlpha(c.smoke, 0.75)), hex(c.dust), hex(c.graphite),
              hex(c.starlight), hex(c.dust), hex(c.mist));
@@ -201,11 +214,6 @@ double paintPill(QPainter &p, const QPointF &topLeft, const QString &text, int s
     p.setRenderHint(QPainter::Antialiasing);
     p.setPen(QPen(pill.border, 1));
     p.setBrush(pill.fill);
-    if (shade == 9) {
-        QPen dashed(pill.border, 1, Qt::DashLine);
-        dashed.setDashPattern({3, 2});
-        p.setPen(dashed);
-    }
     p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), height * 0.32, height * 0.32);
     p.setPen(pill.text);
     p.setFont(uiFont(qMax(11.0, height * 0.56), QFont::Medium));
@@ -347,12 +355,52 @@ void paintHover(QPainter &p, const QRectF &rect, double amount, double radius)
     p.restore();
 }
 
+QStringList wrapLines(const QFont &font, const QString &text, double width, int maxLines)
+{
+    const QFontMetricsF fm(font);
+    QStringList lines;
+    QStringList words = text.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    while (!words.isEmpty()) {
+        if (lines.size() == maxLines - 1) {
+            lines.append(fm.elidedText(words.join(QLatin1Char(' ')), Qt::ElideRight, width));
+            break;
+        }
+        QString line;
+        int taken = 0;
+        for (; taken < words.size(); ++taken) {
+            const QString next = line.isEmpty() ? words[taken] : line + QLatin1Char(' ') + words[taken];
+            if (!line.isEmpty() && fm.horizontalAdvance(next) > width)
+                break;
+            line = next;
+        }
+        lines.append(fm.elidedText(line, Qt::ElideRight, width)); // a single overlong word
+        words = words.mid(taken);
+    }
+    return lines;
+}
+
 void polishMenu(QMenu *menu)
 {
     menu->setWindowFlag(Qt::FramelessWindowHint);
     menu->setWindowFlag(Qt::NoDropShadowWindowHint);
     menu->setAttribute(Qt::WA_TranslucentBackground);
     menu->setFont(uiFont(13));
+}
+
+QAction *addMenuSection(QMenu *menu, const QString &text)
+{
+    // QMenu's own sections draw as a bare line in this style: a small caption.
+    auto *label = new QLabel(text);
+    label->setFont(uiFont(11.5, QFont::DemiBold));
+    label->setStyleSheet(QStringLiteral("QLabel { color: #7a7a86; padding: 6px 10px 3px 10px; background: transparent; }"));
+    label->setTextFormat(Qt::PlainText);
+    auto *action = new QWidgetAction(menu);
+    action->setDefaultWidget(label);
+    action->setEnabled(false);
+    if (!menu->actions().isEmpty())
+        menu->addSeparator();
+    menu->addAction(action);
+    return action;
 }
 
 QMenu *makeMenu(QWidget *parent)

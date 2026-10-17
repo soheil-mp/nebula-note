@@ -18,7 +18,6 @@
 #include <QPainterPath>
 #include <QScrollArea>
 #include <QScrollBar>
-#include <QSvgRenderer>
 
 namespace
 {
@@ -188,7 +187,8 @@ int PageTree::rowAt(int y) const
 
 QRect PageTree::chevronRect(const Row &r) const
 {
-    return QRect(8 + r.depth * kIndent, r.y + (r.h - 20) / 2, 20, 20);
+    // Shares its spot with the page icon, lined up with the items above the tree.
+    return QRect(11 + r.depth * kIndent, r.y + (r.h - 20) / 2, 20, 20);
 }
 
 QRect PageTree::plusRect(const Row &r) const
@@ -199,6 +199,34 @@ QRect PageTree::plusRect(const Row &r) const
 QRect PageTree::moreRect(const Row &r) const
 {
     return QRect(width() - 56, r.y + (r.h - 22) / 2, 22, 22);
+}
+
+QRegion PageTree::inkRegion() const
+{
+    QRegion ink;
+    for (const Row &r : m_rows) {
+        int left = 0, textLeft = 0;
+        QFont font = Theme::uiFont(13.5);
+        if (r.kind == Row::Header) {
+            left = textLeft = 12;
+            font = Theme::uiFont(11.5, QFont::Medium);
+        } else if (r.kind == Row::Empty) {
+            left = textLeft = 14 + r.depth * kIndent;
+            font = Theme::uiFont(12.5);
+        } else if (r.kind == Row::View) {
+            left = 12 + r.depth * kIndent;
+            textLeft = left + 28;
+            font = Theme::uiFont(13);
+        } else {
+            left = chevronRect(r).left();
+            textLeft = left + 29;
+        }
+        const QString text = r.kind == Row::Empty ? tr("No pages inside") : r.title;
+        const int right = qMin(width() - 8, textLeft + int(QFontMetricsF(font).horizontalAdvance(text)) + 4);
+        const int top = r.kind == Row::Header ? r.y + 10 : r.y + 4;
+        ink += QRect(left - 3, top, right - left + 6, r.y + r.h - 4 - top);
+    }
+    return ink;
 }
 
 void PageTree::paintEvent(QPaintEvent *e)
@@ -227,19 +255,19 @@ void PageTree::paintEvent(QPaintEvent *e)
         if (r.kind == Row::Empty) {
             p.setFont(Theme::uiFont(12.5));
             p.setPen(c.dust);
-            p.drawText(QRect(14 + r.depth * kIndent + 14, r.y, width() - 40, r.h), Qt::AlignVCenter, tr("No pages inside"));
+            p.drawText(QRect(14 + r.depth * kIndent, r.y, width() - 40, r.h), Qt::AlignVCenter, tr("No pages inside"));
             continue;
         }
         if (r.kind == Row::View) {
             const bool hoverView = i == m_hover && !m_dragging;
             if (hoverView)
                 Theme::paintHover(p, rowRect, 0.9, 6);
-            const int x = 14 + r.depth * kIndent + 4;
-            Icons::paint(p, QRectF(x, r.y + (r.h - 15) / 2.0, 15, 15), r.viewIcon, hoverView ? c.starlight : c.fog);
+            const int x = 12 + r.depth * kIndent;
+            Icons::paint(p, QRectF(x + 1.5, r.y + (r.h - 15) / 2.0, 15, 15), r.viewIcon, hoverView ? c.starlight : c.fog);
             p.setFont(Theme::uiFont(13));
             p.setPen(hoverView ? c.starlight : c.haze);
-            p.drawText(QRectF(x + 23, r.y, width() - x - 35, r.h), Qt::AlignVCenter,
-                       QFontMetricsF(p.font()).elidedText(r.title, Qt::ElideRight, width() - x - 35));
+            p.drawText(QRectF(x + 28, r.y, width() - x - 40, r.h), Qt::AlignVCenter,
+                       QFontMetricsF(p.font()).elidedText(r.title, Qt::ElideRight, width() - x - 40));
             continue;
         }
         const bool current = r.id == m_current;
@@ -264,17 +292,17 @@ void PageTree::paintEvent(QPaintEvent *e)
         }
         const PageMeta *m = ws->page(r.id);
         const QRect chev = chevronRect(r);
-        const QRect icon(chev.right() + 2, r.y + (r.h - 18) / 2, 18, 18);
+        const QRect icon(chev.left() + 1, r.y + (r.h - 18) / 2, 18, 18);
         // The icon turns into a chevron on hover, as in Notion.
-        if (hover && m_hoverPart == 1) {
-            Theme::paintHover(p, chev, 1.3, 4);
+        if (hover && !m_dragging) {
+            if (m_hoverPart == 1)
+                Theme::paintHover(p, chev, 1.3, 4);
+            Icons::paint(p, QRectF(chev).adjusted(3, 3, -3, -3), r.expanded ? QStringLiteral("chevron-down") : QStringLiteral("chevron-right"),
+                         m_hoverPart == 1 ? c.starlight : c.mist);
+        } else {
+            Icons::paintPageIcon(p, icon, m ? m->icon : QString(), current ? c.starlight : c.mist,
+                                 m && m->isDatabase() ? QStringLiteral("database") : QStringLiteral("page"));
         }
-        if (hover || r.expanded) {
-            Icons::paint(p, QRectF(chev).adjusted(4, 4, -4, -4), r.expanded ? QStringLiteral("chevron-down") : QStringLiteral("chevron-right"),
-                         hover && m_hoverPart == 1 ? c.starlight : c.fog);
-        }
-        Icons::paintPageIcon(p, icon, m ? m->icon : QString(), current ? c.starlight : c.mist,
-                             m && m->isDatabase() ? QStringLiteral("database") : (r.hasChildren || !(m && m->icon.isEmpty()) ? QStringLiteral("page") : QStringLiteral("page")));
         double right = width() - 12;
         if (hover && !m_dragging) {
             right = moreRect(r).left() - 2;
@@ -288,7 +316,7 @@ void PageTree::paintEvent(QPaintEvent *e)
         }
         p.setFont(Theme::uiFont(13.5, current ? QFont::Medium : QFont::Normal));
         p.setPen(current ? c.starlight : (m && m->title.trimmed().isEmpty() ? c.fog : c.moon));
-        const double x = icon.right() + 8;
+        const double x = chev.left() + 29;
         p.drawText(QRectF(x, r.y, right - x, r.h), Qt::AlignVCenter | Qt::AlignLeft,
                    QFontMetricsF(p.font()).elidedText(r.title, Qt::ElideRight, right - x));
     }
@@ -461,7 +489,7 @@ void PageTree::renamePage(const QString &id)
         m_rename = new QLineEdit(this);
         m_rename->setText(Workspace::instance()->page(id)->title);
         m_rename->setFont(Theme::uiFont(13.5));
-        const int x = chevronRect(r).right() + 24;
+        const int x = chevronRect(r).left() + 25;
         m_rename->setGeometry(x, r.y + 2, width() - x - 8, r.h - 4);
         m_rename->show();
         m_rename->setFocus();
@@ -621,7 +649,20 @@ void Sidebar::paintEvent(QPaintEvent *)
     g.setColorAt(0, Theme::withAlpha(QColor(0x12, 0x12, 0x16), base.alphaF()));
     g.setColorAt(1, Theme::withAlpha(QColor(0x0B, 0x0B, 0x0D), base.alphaF()));
     p.fillRect(rect(), g);
-    Cosmos::paintStars(p, rect(), this, 0.55 * settings.starfield);
+    // Stars fill the empty sky between rows, never the labels themselves.
+    QRegion ink;
+    {
+        const QString name = Workspace::instance() ? Workspace::instance()->name() : QStringLiteral("Nebula Note");
+        const double nameW = QFontMetricsF(Theme::uiFont(14, QFont::DemiBold)).horizontalAdvance(name);
+        ink += QRect(m_headerRect.left(), m_headerRect.center().y() - 14, int(qMin(36 + nameW + 6, double(m_headerRect.width()))), 28);
+        const QFontMetricsF fm(Theme::uiFont(13.5, QFont::Medium));
+        for (const QList<Item> *items : {&m_top, &m_bottom})
+            for (const Item &it : *items)
+                ink += QRect(it.rect.left() + 5, it.rect.top() + 4, int(36 + fm.horizontalAdvance(it.text)), it.rect.height() - 8);
+        const QRect treeArea(m_scroll->viewport()->mapTo(this, QPoint(0, 0)), m_scroll->viewport()->size());
+        ink += m_tree->inkRegion().translated(m_tree->mapTo(this, QPoint(0, 0))).intersected(treeArea);
+    }
+    Cosmos::paintStars(p, rect(), this, 0.55 * settings.starfield, ink);
     Cosmos::paintNebulaHaze(p, QRectF(-width() * 0.4, height() * 0.55, width() * 1.6, height() * 0.6), 0.9 * settings.starfield, 3);
     // Hairline separating sidebar and page.
     p.setPen(QPen(Theme::withAlpha(QColor(255, 255, 255), 0.06), 1));
@@ -630,11 +671,29 @@ void Sidebar::paintEvent(QPaintEvent *)
     // Workspace header.
     if (m_hover == 200)
         Theme::paintHover(p, m_headerRect, 1.0, 8);
-    QSvgRenderer emblem(QStringLiteral(":/icons/app/nebula.svg"));
-    emblem.render(&p, QRectF(m_headerRect.left() + 4, m_headerRect.center().y() - 12, 24, 24));
+    const QString name = Workspace::instance() ? Workspace::instance()->name() : QStringLiteral("Nebula Note");
+    {
+        // The workspace mark: its initial on a small lit tile (the full app
+        // icon turns to mud at this size).
+        const QRectF tile(m_headerRect.left() + 5, m_headerRect.center().y() - 11, 22, 22);
+        QLinearGradient tg(tile.topLeft(), tile.bottomLeft());
+        tg.setColorAt(0, QColor(0x3A, 0x3A, 0x42));
+        tg.setColorAt(1, QColor(0x22, 0x22, 0x28));
+        p.setPen(QPen(Theme::withAlpha(QColor(255, 255, 255), 0.12), 1));
+        p.setBrush(tg);
+        p.drawRoundedRect(tile.adjusted(0.5, 0.5, -0.5, -0.5), 6, 6);
+        QString initial;
+        for (const QChar ch : name)
+            if (ch.isLetterOrNumber()) {
+                initial = ch.toUpper();
+                break;
+            }
+        p.setFont(Theme::uiFont(12, QFont::Bold));
+        p.setPen(c.starlight);
+        p.drawText(tile.adjusted(0, 0, 0, -0.5), Qt::AlignCenter, initial.isEmpty() ? QStringLiteral("N") : initial);
+    }
     p.setFont(Theme::uiFont(14, QFont::DemiBold));
     p.setPen(c.starlight);
-    const QString name = Workspace::instance() ? Workspace::instance()->name() : QStringLiteral("Nebula Note");
     const double nameRight = m_collapseRect.left() - 6;
     p.drawText(QRectF(m_headerRect.left() + 36, m_headerRect.top(), nameRight - m_headerRect.left() - 36, m_headerRect.height()),
                Qt::AlignVCenter, QFontMetricsF(p.font()).elidedText(name, Qt::ElideRight, nameRight - m_headerRect.left() - 36));
@@ -749,7 +808,7 @@ void Sidebar::mousePressEvent(QMouseEvent *e)
         if (id == QLatin1String("settings"))
             emit settingsRequested();
         else
-            emit trashRequested(mapToGlobal(m_bottom[h - 100].rect.topRight() + QPoint(8, -300)));
+            emit trashRequested(mapToGlobal(m_bottom[h - 100].rect.bottomRight() + QPoint(8, 0)));
     }
 }
 

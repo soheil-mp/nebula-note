@@ -302,7 +302,7 @@ PageView::PageView(QWidget *parent)
     };
     addStarter(QStringLiteral("page-empty"), tr("Empty page"), [this] { m_editor->focusStart(); });
     addStarter(QStringLiteral("template"), tr("Templates"), [this] { emit templatesRequested(m_pageId); });
-    addStarter(QStringLiteral("download"), tr("Import Markdown or CSV"), [this] { emit importRequested(m_pageId); });
+    addStarter(QStringLiteral("download"), tr("Import"), [this] { emit importRequested(m_pageId); });
     auto *dbLabel = new QLabel(tr("Turn into a database"));
     dbLabel->setFont(Theme::uiFont(12, QFont::Medium));
     dbLabel->setStyleSheet(QStringLiteral("color: #6b6b75; padding: 12px 0 4px 2px;"));
@@ -311,7 +311,7 @@ PageView::PageView(QWidget *parent)
     dbRow->setSpacing(4);
     for (const auto &[vt, icon] : {std::pair{ViewType::Table, QStringLiteral("table")}, std::pair{ViewType::Board, QStringLiteral("board")},
                                    std::pair{ViewType::List, QStringLiteral("list")}, std::pair{ViewType::Gallery, QStringLiteral("gallery")},
-                                   std::pair{ViewType::Calendar, QStringLiteral("calendar")}}) {
+                                   std::pair{ViewType::Calendar, QStringLiteral("calendar")}, std::pair{ViewType::Timeline, viewTypeIcon(ViewType::Timeline)}}) {
         auto *b = new FlatButton(icon, viewTypeName(vt));
         b->setFilled(true);
         b->setTextSize(13);

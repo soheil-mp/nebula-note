@@ -81,6 +81,10 @@ bool SpellChecker::isCorrect(const QString &word)
         QStringLiteral("subpages"), QStringLiteral("sql"),     QStringLiteral("csv"),      QStringLiteral("url"),
         QStringLiteral("urls"),     QStringLiteral("app"),     QStringLiteral("apps"),     QStringLiteral("wiki"),
         QStringLiteral("wikis"),    QStringLiteral("obsidian"), QStringLiteral("evernote"), QStringLiteral("enter"),
+        QStringLiteral("backtick"), QStringLiteral("backticks"), QStringLiteral("strikethrough"), QStringLiteral("toggles"),
+        QStringLiteral("inline"),   QStringLiteral("sqlite"),  QStringLiteral("pdf"),      QStringLiteral("gif"),
+        QStringLiteral("gifs"),     QStringLiteral("unsplash"), QStringLiteral("dropdown"), QStringLiteral("checkbox"),
+        QStringLiteral("checkboxes"), QStringLiteral("rollup"), QStringLiteral("rollups"), QStringLiteral("timeline"),
     };
     if (known.contains(word.toLower()))
         return true;

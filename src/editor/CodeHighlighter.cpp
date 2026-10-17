@@ -239,8 +239,9 @@ void CodeHighlighter::highlightBlock(const QString &text)
     QTextCharFormat keyword, type, string, comment, number, tag, punct;
     keyword.setForeground(c.starlight);
     keyword.setFontWeight(QFont::DemiBold);
-    type.setForeground(QColor(0xDA, 0xDA, 0xE0));
-    type.setFontItalic(true);
+    // Only comments lean; types read as a brighter gray of their own.
+    type.setForeground(QColor(0xD4, 0xD4, 0xDC));
+    type.setFontWeight(QFont::Medium);
     string.setForeground(c.mist);
     comment.setForeground(c.fog);
     comment.setFontItalic(true);

@@ -10,6 +10,7 @@
 #include "ui/Theme.h"
 #include "views/MainWindow.h"
 
+#include <algorithm>
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
@@ -17,6 +18,10 @@
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QMessageBox>
+#include <QKeySequence>
+#include <QContextMenuEvent>
+#include <QMouseEvent>
+#include <QKeyEvent>
 #include <QPainter>
 #include <QStandardPaths>
 #include <QStyleFactory>
@@ -55,6 +60,112 @@ QString dataDirectory(const QString &overrideDir)
 }
 }
 
+// ---- screenshot driver ---------------------------------------------------------------
+// For --shot: actions that click, hover and type at window coordinates, and a
+// grab that includes popups (menus, popovers live in windows of their own).
+namespace ShotDriver
+{
+QWidget *targetAt(QWidget &window, const QPoint &globalPos, QPoint *local)
+{
+    // Popups on top first.
+    const QList<QWidget *> tops = QApplication::topLevelWidgets();
+    for (auto it = tops.crbegin(); it != tops.crend(); ++it) {
+        QWidget *tl = *it;
+        if (tl == &window || !tl->isVisible() || !tl->geometry().contains(globalPos))
+            continue;
+        QWidget *w = tl->childAt(tl->mapFromGlobal(globalPos));
+        w = w ? w : tl;
+        *local = w->mapFromGlobal(globalPos);
+        return w;
+    }
+    QWidget *w = window.childAt(window.mapFromGlobal(globalPos));
+    w = w ? w : &window;
+    *local = w->mapFromGlobal(globalPos);
+    return w;
+}
+
+void mouse(QWidget &window, const QPoint &pos, Qt::MouseButton button, bool click)
+{
+    const QPoint global = window.mapToGlobal(pos);
+    QPoint local;
+    QWidget *w = targetAt(window, global, &local);
+    QMouseEvent move(QEvent::MouseMove, local, global, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(w, &move);
+    if (!click)
+        return;
+    QMouseEvent press(QEvent::MouseButtonPress, local, global, button, button, Qt::NoModifier);
+    QWidget *const popupBefore = QApplication::activePopupWidget();
+    QApplication::sendEvent(w, &press);
+    // The press may have replaced the widget. A popup it just opened (a combo
+    // list) must not get the release, or it picks the item under the cursor.
+    if (QApplication::activePopupWidget() == popupBefore || !QApplication::activePopupWidget())
+        w = targetAt(window, global, &local);
+    QMouseEvent release(QEvent::MouseButtonRelease, local, global, button, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(w, &release);
+    if (button == Qt::RightButton) {
+        QContextMenuEvent menu(QContextMenuEvent::Mouse, local, global);
+        QApplication::sendEvent(w, &menu);
+    }
+}
+
+void run(MainWindow &window, const QString &action)
+{
+    const QString arg = action.section(QLatin1Char(':'), 1);
+    auto point = [&] { return QPoint(arg.section(QLatin1Char(','), 0, 0).toInt(), arg.section(QLatin1Char(','), 1, 1).toInt()); };
+    if (action.startsWith(QLatin1String("click:")))
+        mouse(window, point(), Qt::LeftButton, true);
+    else if (action.startsWith(QLatin1String("rclick:")))
+        mouse(window, point(), Qt::RightButton, true);
+    else if (action.startsWith(QLatin1String("hoverat:")))
+        mouse(window, point(), Qt::NoButton, false);
+    else if (action.startsWith(QLatin1String("type:"))) {
+        QWidget *w = QApplication::focusWidget() ? QApplication::focusWidget() : &window;
+        for (const QChar ch : arg) {
+            QKeyEvent key(QEvent::KeyPress, 0, Qt::NoModifier, QString(ch));
+            QApplication::sendEvent(w, &key);
+        }
+    } else if (action.startsWith(QLatin1String("key:"))) {
+        const QKeySequence seq(arg);
+        if (seq.isEmpty())
+            return;
+        const QKeyCombination combo = seq[0];
+        QWidget *w = QApplication::focusWidget() ? QApplication::focusWidget() : &window;
+        QKeyEvent key(QEvent::KeyPress, combo.key(), combo.keyboardModifiers());
+        if (!QApplication::sendEvent(w, &key) || !key.isAccepted()) {
+            QKeyEvent shortcut(QEvent::ShortcutOverride, combo.key(), combo.keyboardModifiers());
+            QApplication::sendEvent(w, &shortcut);
+        }
+        QKeyEvent up(QEvent::KeyRelease, combo.key(), combo.keyboardModifiers());
+        QApplication::sendEvent(w, &up);
+    } else {
+        window.runAction(action);
+    }
+}
+
+QImage grabAll(QWidget &window)
+{
+    QImage img = window.grab().toImage();
+    QPainter p(&img);
+    // Paint popups in stacking order: one opened from inside another (a combo
+    // list inside a popover) is nested deeper in the parent chain.
+    const auto depth = [](QWidget *w) {
+        int d = 0;
+        for (QWidget *p = w->parentWidget(); p; p = p->parentWidget())
+            if (p->isWindow())
+                ++d;
+        return d;
+    };
+    QList<QWidget *> popups;
+    for (QWidget *tl : QApplication::topLevelWidgets())
+        if (tl != &window && tl->isVisible() && tl->width() >= 4)
+            popups << tl;
+    std::stable_sort(popups.begin(), popups.end(), [&](QWidget *a, QWidget *b) { return depth(a) < depth(b); });
+    for (QWidget *tl : popups)
+        p.drawPixmap(window.mapFromGlobal(tl->mapToGlobal(QPoint(0, 0))), tl->grab());
+    return img;
+}
+} // namespace ShotDriver
+
 int main(int argc, char **argv)
 {
     // The internal name keeps the workspace and settings where they've always
@@ -77,7 +188,9 @@ int main(int argc, char **argv)
     const QCommandLineOption dataOpt(QStringLiteral("data-dir"), QStringLiteral("Use another workspace folder."), QStringLiteral("dir"));
     const QCommandLineOption shotOpt(QStringLiteral("shot"), QStringLiteral("Save a screenshot of the window and exit."), QStringLiteral("file"));
     const QCommandLineOption openOpt(QStringLiteral("open"), QStringLiteral("With --shot: open the page with this title."), QStringLiteral("title"));
-    const QCommandLineOption actionOpt(QStringLiteral("action"), QStringLiteral("With --shot: quickfind, settings, templates, slash."),
+    const QCommandLineOption actionOpt(QStringLiteral("action"),
+                                       QStringLiteral("With --shot (repeatable): quickfind, settings, templates, slash, click:x,y, rclick:x,y, "
+                                                      "hoverat:x,y, type:text, key:Ctrl+K, wait:ms…"),
                                        QStringLiteral("name"));
     const QCommandLineOption exportOpt(QStringLiteral("export"),
                                        QStringLiteral("Export the page named by --open to a .md, .html or .pdf file and exit."), QStringLiteral("file"));
@@ -180,9 +293,9 @@ int main(int argc, char **argv)
 
     if (shot) {
         const QString title = cli.value(openOpt);
-        const QString action = cli.value(actionOpt);
+        const QStringList actions = cli.values(actionOpt);
         const QString out = cli.value(shotOpt);
-        QTimer::singleShot(300, &window, [&, title, action] {
+        QTimer::singleShot(300, &window, [&, title, actions, out] {
             if (title == QLatin1String("home"))
                 window.goHome();
             else if (!title.isEmpty()) {
@@ -192,12 +305,20 @@ int main(int argc, char **argv)
                         break;
                     }
             }
-            if (!action.isEmpty())
-                QTimer::singleShot(250, &window, [&window, action] { window.runAction(action); });
-        });
-        QTimer::singleShot(1700, &window, [&window, out] {
-            window.grab().save(out);
-            QApplication::quit();
+            // Actions run one after another; "wait:<ms>" pauses longer.
+            int at = 300;
+            for (const QString &a : actions) {
+                if (a.startsWith(QLatin1String("wait:"))) {
+                    at += a.mid(5).toInt();
+                    continue;
+                }
+                QTimer::singleShot(at, &window, [&window, a] { ShotDriver::run(window, a); });
+                at += 380;
+            }
+            QTimer::singleShot(at + 900, &window, [&window, out] {
+                ShotDriver::grabAll(window).save(out);
+                QApplication::quit();
+            });
         });
     }
     return app.exec();

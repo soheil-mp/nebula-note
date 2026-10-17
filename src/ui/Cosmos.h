@@ -8,6 +8,7 @@
 
 class QPainter;
 class QPointF;
+class QRegion;
 class QWidget;
 
 // The "space" layer of the design: a seamless starfield, procedural cover
@@ -18,6 +19,8 @@ namespace Cosmos
 // paint the field line up.
 void paintStars(QPainter &p, const QRect &rect, const QPoint &originInWindow, double intensity);
 void paintStars(QPainter &p, const QRect &rect, const QWidget *widget, double intensity);
+// The same, leaving `avoid` (painter coordinates) clear so no star sits on text.
+void paintStars(QPainter &p, const QRect &rect, const QWidget *widget, double intensity, const QRegion &avoid);
 
 // Soft gray haze for large empty surfaces.
 void paintNebulaHaze(QPainter &p, const QRectF &rect, double strength = 1.0, int seed = 7);

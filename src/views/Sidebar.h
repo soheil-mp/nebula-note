@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QPointer>
+#include <QRegion>
 #include <QTimer>
 #include <QWidget>
 
@@ -17,6 +18,8 @@ public:
     void setCurrent(const QString &id);
     void revealPage(const QString &id);
     void renamePage(const QString &id);
+    // Where the rows put ink (icons and labels), for keeping the starfield off them.
+    QRegion inkRegion() const;
 
 signals:
     void openPage(const QString &id);

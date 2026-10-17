@@ -374,7 +374,7 @@ void BlockEditor::showTableMenu(QTextTable *t, int row, int col, const QPoint &g
     QMenu *menu = Theme::makeMenu(this);
     QPointer<QTextTable> table(t);
     const QJsonObject data = dataOfTable(t);
-    menu->addSection(tr("Table"));
+    Theme::addMenuSection(menu, tr("Table"));
     QAction *hr = menu->addAction(tr("Header row"));
     hr->setCheckable(true);
     hr->setChecked(data.value(QStringLiteral("hr")).toBool());

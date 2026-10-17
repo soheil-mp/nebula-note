@@ -84,6 +84,21 @@ void ListView::layoutLines()
         m_lines.append({Line::More, y});
         y += kListRowH;
     }
+    // Properties line up in columns: each gets the width of its widest value.
+    m_propWidths.clear();
+    for (const Property *prop : m_ctx.schema.orderedProps(m_ctx.view)) {
+        if (prop->type == PropType::Title)
+            continue;
+        double w = 0;
+        for (const Line &l : m_lines)
+            if (l.kind == Line::Row) {
+                const QJsonValue v = rowValue(*prop, m_ctx.rows[l.row]);
+                if (!isEmptyValue(*prop, v))
+                    w = qMax(w, qMin(220.0, PropertyEditors::valueWidth(*prop, v) + 4));
+            }
+        if (w > 0)
+            m_propWidths.insert(prop->id, w);
+    }
     setFixedHeight(int(y + 12));
 }
 
@@ -110,7 +125,21 @@ void ListView::paintEvent(QPaintEvent *e)
     const auto &c = Theme::colors();
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    const QList<const Property *> props = m_ctx.schema.orderedProps(m_ctx.view);
+    // The columns that fit in the right half, rightmost first.
+    QList<QPair<const Property *, double>> columns;
+    {
+        double used = 0;
+        const QList<const Property *> props = m_ctx.schema.orderedProps(m_ctx.view);
+        for (auto it = props.crbegin(); it != props.crend(); ++it) {
+            const double w = m_propWidths.value((*it)->id);
+            if (w <= 0)
+                continue;
+            if (used + w > width() * 0.55)
+                break;
+            columns.append({*it, w});
+            used += w + 16;
+        }
+    }
     for (int li = 0; li < m_lines.size(); ++li) {
         const Line &line = m_lines[li];
         if (line.y > e->rect().bottom() || line.y + kListGroupH < e->rect().top())
@@ -150,18 +179,11 @@ void ListView::paintEvent(QPaintEvent *e)
         }
         // Properties on the right, from the right edge.
         double right = row.right() - 10;
-        for (auto it = props.crbegin(); it != props.crend(); ++it) {
-            const Property *prop = *it;
-            if (prop->type == PropType::Title)
-                continue;
+        for (const auto &[prop, w] : columns) {
             const QJsonValue v = rowValue(*prop, r);
-            if (isEmptyValue(*prop, v))
-                continue;
-            const double w = qMin(220.0, PropertyEditors::valueWidth(*prop, v) + 4);
-            if (right - w < row.width() * 0.45)
-                break;
-            PropertyEditors::paintValue(p, QRectF(right - w, row.top(), w, row.height()), *prop, v, true);
-            right -= w + 14;
+            if (!isEmptyValue(*prop, v))
+                PropertyEditors::paintValue(p, QRectF(right - w, row.top(), w, row.height()), *prop, v, true);
+            right -= w + 16;
         }
         p.setFont(Theme::uiFont(14, QFont::Medium));
         p.setPen(r.meta && !r.meta->title.trimmed().isEmpty() ? c.moon : c.haze);

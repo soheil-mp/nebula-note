@@ -257,6 +257,7 @@ private:
     int lineAt(double y) const;
     QList<Line> m_lines;
     QList<RowGroup> m_groups;
+    QHash<QString, double> m_propWidths; // widest value per shown property
     int m_hover = -1;
     bool m_hoverToggle = false;
     QSet<QString> m_collapsedRows;

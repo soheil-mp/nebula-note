@@ -19,6 +19,8 @@
 #include <QPainter>
 #include <QPainterPath>
 
+#include <cmath>
+
 using namespace DbViewsPrivate;
 
 namespace
@@ -51,7 +53,8 @@ int BoardView::contentWidth(int available) const
 {
     if (!m_groupProp)
         return available;
-    return qMax(available, int(m_width + 20));
+    // Scroll sideways only when the columns really don't fit.
+    return qMax(available, int(std::ceil(m_width)) + 4);
 }
 
 double BoardView::cardHeight(const RowRef &r) const
@@ -107,8 +110,8 @@ void BoardView::layoutBoard()
         ws.append(folded ? kFoldedW : colW);
         x += ws.last() + kGap;
     }
-    m_addGroupRect = propTypeHasOptions(m_groupProp->type) && m_ctx.editable ? QRectF(x, 4, 150, 30) : QRectF();
-    m_width = x + (m_addGroupRect.isNull() ? 0 : 160);
+    m_addGroupRect = propTypeHasOptions(m_groupProp->type) && m_ctx.editable ? QRectF(x, 4, 130, 30) : QRectF();
+    m_width = m_addGroupRect.isNull() ? x - kGap : m_addGroupRect.right();
 
     // Lanes: one per sub-group, or a single lane holding every row.
     QList<RowGroup> lanes;

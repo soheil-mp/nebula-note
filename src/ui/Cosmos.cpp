@@ -10,6 +10,7 @@
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
+#include <QRegion>
 #include <QRadialGradient>
 #include <QRandomGenerator>
 #include <QWidget>
@@ -677,6 +678,14 @@ void paintStars(QPainter &p, const QRect &rect, const QWidget *widget, double in
 {
     const QPoint origin = widget ? widget->mapTo(widget->window(), QPoint(0, 0)) : QPoint();
     paintStars(p, rect, origin, intensity);
+}
+
+void paintStars(QPainter &p, const QRect &rect, const QWidget *widget, double intensity, const QRegion &avoid)
+{
+    p.save();
+    p.setClipRegion(QRegion(rect).subtracted(avoid), Qt::IntersectClip);
+    paintStars(p, rect, widget, intensity);
+    p.restore();
 }
 
 void paintNebulaHaze(QPainter &p, const QRectF &rect, double strength, int seed)

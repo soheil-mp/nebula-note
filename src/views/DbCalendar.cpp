@@ -402,7 +402,7 @@ void CalendarView::mousePressEvent(QMouseEvent *e)
         } else if (m_more.contains(m_hoverCell)) {
             // Everything on that day.
             QMenu *menu = Theme::makeMenu(this);
-            menu->addSection(QLocale(QLocale::English).toString(day, QStringLiteral("dddd, MMMM d")));
+            Theme::addMenuSection(menu, QLocale(QLocale::English).toString(day, QStringLiteral("dddd, MMMM d")));
             for (const RowRef &r : m_ctx.rows) {
                 const auto span = spanOf(m_ctx.schema, m_ctx.view, *dp, r);
                 if (!r.meta || !span.first.isValid() || day < span.first || day > span.second)

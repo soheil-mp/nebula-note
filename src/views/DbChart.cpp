@@ -458,7 +458,7 @@ void ChartView::mousePressEvent(QMouseEvent *e)
     // The rows behind a bar or slice.
     const Point &pt = m_points[m_hover];
     QMenu *menu = Theme::makeMenu(this);
-    menu->addSection(pt.label);
+    Theme::addMenuSection(menu, pt.label);
     int n = 0;
     Workspace *ws = Workspace::instance();
     for (const QStringList &ids : pt.rows)

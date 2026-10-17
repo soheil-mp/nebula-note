@@ -9,6 +9,8 @@
 #include <QRegularExpression>
 #include <QtMath>
 
+#include <cmath>
+
 namespace Mermaid
 {
 namespace
@@ -215,11 +217,20 @@ void layout(Graph &g, double px, double maxWidth)
             w *= 1.45;
             h *= 1.6;
         } else if (node.shape == Shape::Circle) {
-            w = h = qMax(w, h);
+            w = h = qMax(w - px * 0.6, h);
         }
         node.rect = QRectF(0, 0, qMax(w, px * 4), h);
     }
-    const double gapMain = px * 3.2, gapCross = px * 1.6;
+    // Room after each layer for the curves and any edge labels riding on them.
+    QList<double> gapAfter(layers, px * 3.4);
+    for (const Edge &e : g.edges) {
+        if (e.label.isEmpty())
+            continue;
+        const int l = qMin(g.nodes[e.from].layer, g.nodes[e.to].layer);
+        const double need = (g.vertical ? fm.height() + px * 0.4 : fm.horizontalAdvance(e.label) + px * 0.8) + px * 2.6;
+        gapAfter[l] = qMax(gapAfter[l], need);
+    }
+    const double gapCross = px * 2.0;
     // Thickness of each layer along the main axis, and span across.
     QList<double> thick(layers, 0), span(layers, 0);
     for (int l = 0; l < layers; ++l) {
@@ -247,9 +258,8 @@ void layout(Graph &g, double px, double maxWidth)
                 cross += r.height() + gapCross;
             }
         }
-        mainPos += thick[l] + gapMain;
+        mainPos += thick[l] + (ll + 1 < layers ? gapAfter[g.reversed ? l - 1 : l] : 0);
     }
-    mainPos -= gapMain;
     g.size = g.vertical ? QSizeF(maxSpan, mainPos) : QSizeF(mainPos, maxSpan);
     Q_UNUSED(maxWidth)
 }
@@ -309,35 +319,64 @@ void paint(QPainter &p, const QPointF &topLeft, const QString &source, double fo
     QFont f = Theme::uiFont(fontPx);
     p.setFont(f);
     const QFontMetricsF fm(f);
-    // Edges under the nodes.
+    // Edges under the nodes: smooth curves from side to facing side, like
+    // Mermaid's own renderer; anything else (same layer, cycles) goes straight.
     for (const Edge &e : g.edges) {
         const QRectF a = g.nodes[e.from].rect, b = g.nodes[e.to].rect;
-        const QPointF p1 = edgePoint(a, b.center()), p2 = edgePoint(b, a.center());
-        QPen pen(c.haze, e.line == Line::Thick ? 2.4 : 1.4);
+        QPointF p1, p2, c1, c2;
+        if (!g.vertical && (b.left() >= a.right() - 0.5 || a.left() >= b.right() - 0.5)) {
+            const bool right = b.left() >= a.right() - 0.5;
+            p1 = QPointF(right ? a.right() : a.left(), a.center().y());
+            p2 = QPointF(right ? b.left() : b.right(), b.center().y());
+            const double d = (p2.x() - p1.x()) * 0.5;
+            c1 = p1 + QPointF(d, 0);
+            c2 = p2 - QPointF(d, 0);
+        } else if (g.vertical && (b.top() >= a.bottom() - 0.5 || a.top() >= b.bottom() - 0.5)) {
+            const bool down = b.top() >= a.bottom() - 0.5;
+            p1 = QPointF(a.center().x(), down ? a.bottom() : a.top());
+            p2 = QPointF(b.center().x(), down ? b.top() : b.bottom());
+            const double d = (p2.y() - p1.y()) * 0.5;
+            c1 = p1 + QPointF(0, d);
+            c2 = p2 - QPointF(0, d);
+        } else {
+            p1 = edgePoint(a, b.center());
+            p2 = edgePoint(b, a.center());
+            c1 = p1 + (p2 - p1) / 3;
+            c2 = p1 + (p2 - p1) * 2 / 3;
+        }
+        QPainterPath path(p1);
+        path.cubicTo(c1, c2, p2);
+        QPen pen(c.haze, e.line == Line::Thick ? 2.4 : 1.3);
+        pen.setCapStyle(Qt::RoundCap);
         if (e.line == Line::Dotted)
-            pen.setStyle(Qt::DashLine);
+            pen.setDashPattern({3, 3});
         p.setPen(pen);
-        p.drawLine(p1, p2);
+        p.setBrush(Qt::NoBrush);
+        p.drawPath(path);
         if (e.line != Line::Open) {
-            const QPointF dir = (p2 - p1) / qMax(1.0, std::hypot(p2.x() - p1.x(), p2.y() - p1.y()));
+            QPointF tangent = p2 - c2;
+            if (std::hypot(tangent.x(), tangent.y()) < 0.01)
+                tangent = p2 - p1;
+            const QPointF dir = tangent / qMax(0.01, std::hypot(tangent.x(), tangent.y()));
             const QPointF normal(-dir.y(), dir.x());
             const double s = fontPx * 0.5;
             QPainterPath head;
             head.moveTo(p2);
-            head.lineTo(p2 - dir * s + normal * s * 0.55);
-            head.lineTo(p2 - dir * s - normal * s * 0.55);
+            head.lineTo(p2 - dir * s + normal * s * 0.5);
+            head.lineTo(p2 - dir * s * 0.75);
+            head.lineTo(p2 - dir * s - normal * s * 0.5);
             head.closeSubpath();
             p.setPen(Qt::NoPen);
             p.setBrush(c.haze);
             p.drawPath(head);
         }
         if (!e.label.isEmpty()) {
-            const QPointF mid = (p1 + p2) / 2;
+            const QPointF mid = path.pointAtPercent(0.5);
             const double w = fm.horizontalAdvance(e.label) + fontPx * 0.8;
             const QRectF lr(mid.x() - w / 2, mid.y() - fm.height() / 2 - 1, w, fm.height() + 2);
-            p.setPen(Qt::NoPen);
-            p.setBrush(QColor(0x14, 0x14, 0x18));
-            p.drawRoundedRect(lr, 4, 4);
+            p.setPen(QPen(Theme::withAlpha(QColor(255, 255, 255), 0.08), 1));
+            p.setBrush(QColor(0x17, 0x17, 0x1C));
+            p.drawRoundedRect(lr, lr.height() / 2, lr.height() / 2);
             p.setPen(c.mist);
             p.drawText(lr, Qt::AlignCenter, e.label);
         }

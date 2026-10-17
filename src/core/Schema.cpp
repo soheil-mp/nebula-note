@@ -855,6 +855,12 @@ QString formatDateFor(const Property &p, const QString &value)
         return {};
     const bool withTime = value.size() > 10 && value[10] == QLatin1Char('T');
     const QLocale en(QLocale::English);
+    const QDateTime end = dateEndOf(value);
+    // The default format leaves out the year while everything is this year.
+    const int thisYear = QDate::currentDate().year();
+    const QString shortFormat = start.date().year() == thisYear && (!end.isValid() || end.date().year() == thisYear)
+                                    ? QStringLiteral("MMM d")
+                                    : QStringLiteral("MMM d, yyyy");
     auto one = [&](const QDateTime &d) {
         QString s;
         const QString &f = p.dateFormat;
@@ -881,13 +887,12 @@ QString formatDateFor(const Property &p, const QString &value)
             else
                 s = en.toString(d.date(), QStringLiteral("MMM d, yyyy"));
         } else
-            s = en.toString(d.date(), QStringLiteral("MMM d, yyyy"));
+            s = en.toString(d.date(), shortFormat);
         if (withTime)
             s += QLatin1Char(' ') + en.toString(d.time(), p.time24 ? QStringLiteral("HH:mm") : QStringLiteral("h:mm AP"));
         return s;
     };
     QString s = one(start);
-    const QDateTime end = dateEndOf(value);
     if (end.isValid())
         s += QStringLiteral(" → ") + one(end);
     return s;

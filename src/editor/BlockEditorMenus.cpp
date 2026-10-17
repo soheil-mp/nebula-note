@@ -147,7 +147,7 @@ QList<MenuItem> slashItems(bool inCell)
     add(inl, QStringLiteral("emoji"), QStringLiteral("smile"), tr("Emoji"), tr("Search for an emoji."), QStringLiteral("emoticon smiley icon"), QStringLiteral(":"));
 
     // Notion's colour names map onto the gray shades.
-    const QString colours = tr("Colours");
+    const QString colours = tr("Colors");
     static const char *names[] = {"Gray", "Brown", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Red"};
     add(colours, QStringLiteral("fg:0"), QStringLiteral("minus"), tr("Default"), tr("Reset the text and background shade."), QStringLiteral("color colour default reset plain"));
     for (const char *n : names) {
@@ -811,7 +811,7 @@ void BlockEditor::showShadeMenu(const QPoint &globalPos)
 {
     QMenu *menu = Theme::makeMenu(this);
     const bool selection = textCursor().hasSelection();
-    menu->addSection(tr("Text"));
+    Theme::addMenuSection(menu, tr("Text"));
     for (int i = 0; i < kTextShadeCount; ++i) {
         QPixmap swatch(16, 16);
         swatch.fill(Qt::transparent);
@@ -824,7 +824,7 @@ void BlockEditor::showShadeMenu(const QPoint &globalPos)
         QAction *a = menu->addAction(QIcon(swatch), textShadeName(i));
         connect(a, &QAction::triggered, this, [this, i, selection] { setShade(i, -1, !selection); });
     }
-    menu->addSection(tr("Background"));
+    Theme::addMenuSection(menu, tr("Background"));
     for (int i = 0; i < kHighlightShadeCount; ++i) {
         QPixmap swatch(16, 16);
         swatch.fill(Qt::transparent);
@@ -869,7 +869,7 @@ void BlockEditor::showBlockMenu(int blockNumber, const QPoint &globalPos)
     const BlockType type = typeOf(blk);
     const Block props = blockProps(blk);
     QMenu *menu = Theme::makeMenu(this);
-    menu->addSection(toggleableOf(blk) ? tr("Toggle %1").arg(blockTypeName(type).toLower()) : blockTypeName(type));
+    Theme::addMenuSection(menu, toggleableOf(blk) ? tr("Toggle %1").arg(blockTypeName(type).toLower()) : blockTypeName(type));
 
     // Type-specific actions first, like Notion's.
     const QPoint below = objectPopupPos(blk);
@@ -979,7 +979,7 @@ void BlockEditor::showBlockMenu(int blockNumber, const QPoint &globalPos)
     QAction *link = menu->addAction(Icons::icon(QStringLiteral("link")), tr("Copy link to block"));
     link->setShortcut(QKeySequence(Qt::ALT | Qt::SHIFT | Qt::Key_L));
     connect(link, &QAction::triggered, this, [this, blockNumber] { copyLinkToBlock(blockNumber); });
-    QAction *shade = menu->addAction(Icons::icon(QStringLiteral("palette")), tr("Colour…"));
+    QAction *shade = menu->addAction(Icons::icon(QStringLiteral("palette")), tr("Color…"));
     connect(shade, &QAction::triggered, this, [this, globalPos] { showShadeMenu(globalPos); });
     QAction *move = menu->addAction(Icons::icon(QStringLiteral("move")), tr("Move to…"));
     move->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P));
@@ -1055,7 +1055,7 @@ void BlockEditor::contextMenuEvent(QContextMenuEvent *e)
         QString word = wc.selectedText();
         word.replace(QChar(0x2019), QLatin1Char('\''));
         if (word.size() > 1 && typeOf(wc.block()) != BlockType::Code && !SpellChecker::instance().isCorrect(word)) {
-            menu->addSection(tr("Spelling"));
+            Theme::addMenuSection(menu, tr("Spelling"));
             const QStringList sugg = SpellChecker::instance().suggestions(word);
             for (const QString &sgg : sugg) {
                 QAction *a = menu->addAction(sgg);

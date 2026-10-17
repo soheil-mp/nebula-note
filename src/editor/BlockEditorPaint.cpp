@@ -96,11 +96,11 @@ void BlockEditor::paintEvent(QPaintEvent *e)
                     src.replace(QChar::LineSeparator, QLatin1Char('\n'));
                     const Mermaid::Info info = Mermaid::measure(src, 13 * k, box.width() - 32 * k);
                     if (info.supported) {
-                        const QRectF area(box.left(), box.bottom() + 8 * k, box.width(), info.size.height() + 24 * k);
+                        const QRectF area(box.left(), box.bottom() + 8 * k, box.width(), info.size.height() + 40 * k);
                         p.setPen(QPen(QColor(0x22, 0x22, 0x28), 1));
                         p.setBrush(QColor(0x10, 0x10, 0x13));
                         p.drawRoundedRect(area.adjusted(0.5, 0.5, -0.5, -0.5), 10 * k, 10 * k);
-                        Mermaid::paint(p, QPointF(area.center().x() - info.size.width() / 2, area.top() + 12 * k), src, 13 * k, box.width() - 32 * k);
+                        Mermaid::paint(p, QPointF(area.center().x() - info.size.width() / 2, area.top() + 20 * k), src, 13 * k, box.width() - 32 * k);
                     }
                 }
                 QString caption;

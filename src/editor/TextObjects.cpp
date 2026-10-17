@@ -229,7 +229,8 @@ QSizeF TextObjects::intrinsicSize(QTextDocument *doc, int pos, const QTextFormat
     case DividerObject:
         return QSizeF(availableWidth(doc, pos), s.size * 1.35);
     case PageLinkObject:
-        return QSizeF(availableWidth(doc, pos), s.size * 2.0);
+        // About a text line tall, so a run of links keeps the page's rhythm.
+        return QSizeF(availableWidth(doc, pos), s.size * 1.65);
     case MentionObject: {
         const QFont f = mentionFont(doc, pos, s);
         const QFontMetricsF fm(f);
@@ -335,7 +336,7 @@ void TextObjects::drawObject(QPainter *p, const QRectF &rect, QTextDocument *doc
     case PageLinkObject: {
         const QString id = format.property(PageIdProp).toString();
         const bool hovered = m_ctx->hoveredPageId == id;
-        const QRectF row = rect.adjusted(-6, 1, 0, -1);
+        const QRectF row = rect.adjusted(-6, -2, 0, 2);
         if (hovered) {
             p->setPen(Qt::NoPen);
             p->setBrush(Theme::withAlpha(QColor(255, 255, 255), 0.05));
@@ -516,7 +517,9 @@ void TextObjects::drawObject(QPainter *p, const QRectF &rect, QTextDocument *doc
                 return;
             p->setFont(Theme::uiFont(13.5 * k));
             p->setPen(c.fog);
-            p->drawText(QRectF(rect.left() + 2, body.bottom() + 4, rect.width() - 4, cap - 4), Qt::AlignLeft | Qt::AlignVCenter,
+            // An equation's caption sits under it, centred like the formula.
+            const Qt::Alignment align = b.type == BlockType::Equation ? Qt::AlignHCenter : Qt::AlignLeft;
+            p->drawText(QRectF(rect.left() + 2, body.bottom() + 4, rect.width() - 4, cap - 4), align | Qt::AlignVCenter,
                         QFontMetricsF(p->font()).elidedText(caption, Qt::ElideRight, rect.width() - 4));
         };
         switch (b.type) {
@@ -572,10 +575,11 @@ void TextObjects::drawObject(QPainter *p, const QRectF &rect, QTextDocument *doc
                 const double indent = (entries[i].level - minLevel) * 22 * k + 6 * k;
                 p->setFont(Theme::uiFont(14.5 * k));
                 const QFontMetricsF fm(p->font());
-                p->setPen(hot ? c.starlight : c.mist);
+                // Quieter than body text, with a faint underline that firms up on hover.
+                p->setPen(hot ? c.starlight : c.haze);
                 const QString text = fm.elidedText(entries[i].text, Qt::ElideRight, row.width() - indent - 8);
                 p->drawText(QPointF(row.left() + indent, row.center().y() + (fm.ascent() - fm.descent()) / 2), text);
-                p->setPen(QPen(hot ? c.mist : c.ash, 1));
+                p->setPen(QPen(hot ? c.mist : Theme::withAlpha(QColor(255, 255, 255), 0.1), 1));
                 const double uy = qRound(row.center().y() + (fm.ascent() - fm.descent()) / 2 + fm.descent() * 0.7) + 0.5;
                 p->drawLine(QPointF(row.left() + indent, uy), QPointF(row.left() + indent + fm.horizontalAdvance(text), uy));
             }

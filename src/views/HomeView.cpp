@@ -14,6 +14,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QRegion>
 
 class HomeCanvas : public QWidget
 {
@@ -88,14 +89,13 @@ public:
         // Recently visited.
         m_recentTop = y;
         y += 36;
-        const double cardW = 172, cardH = 136, gap = 14;
-        const int perRow = qMax(1, int((colW + gap) / (cardW + gap)));
-        for (int i = 0; i < m_recent.size(); ++i) {
-            const QRectF r(x0 + (i % perRow) * (cardW + gap), y + (i / perRow) * (cardH + gap), cardW, cardH);
-            m_targets.append({r, QStringLiteral("page:") + m_recent[i]});
-        }
-        const int recentRows = m_recent.isEmpty() ? 1 : (int(m_recent.size()) + perRow - 1) / perRow;
-        y += recentRows * (cardH + gap) + 26;
+        // One row of cards spanning the column, as wide as the tiles below.
+        const double cardH = 142, gap = 14;
+        const int perRow = qMax(1, int((colW + gap) / (168 + gap)));
+        const double cardW = (colW - (perRow - 1) * gap) / perRow;
+        for (int i = 0; i < qMin(int(m_recent.size()), perRow); ++i)
+            m_targets.append({QRectF(x0 + i * (cardW + gap), y, cardW, cardH), QStringLiteral("page:") + m_recent[i]});
+        y += cardH + gap + 26;
         // Quick start.
         m_quickTop = y;
         y += 36;
@@ -137,24 +137,9 @@ protected:
         g.setColorAt(0, QColor(0x0B, 0x0B, 0x0E));
         g.setColorAt(1, c.basalt);
         p.fillRect(sky, g);
-        Cosmos::paintStars(p, sky.toRect(), this, 0.9 * starfield);
-        p.save();
-        p.setClipRect(sky);
-        Cosmos::paintHorizon(p, QRectF(0, 40, width(), 230), 1.0);
-        QLinearGradient fade(QPointF(0, 190), QPointF(0, 270));
-        fade.setColorAt(0, Theme::withAlpha(c.basalt, 0));
-        fade.setColorAt(1, c.basalt);
-        p.fillRect(QRectF(0, 190, width(), 80), fade);
-        p.restore();
-
         const QDateTime now = QDateTime::currentDateTime();
         const int hour = now.time().hour();
         const QString greeting = hour < 5 ? tr("Good night") : hour < 12 ? tr("Good morning") : hour < 18 ? tr("Good afternoon") : tr("Good evening");
-        p.setFont(Theme::displayFont(36, QFont::DemiBold));
-        p.setPen(c.starlight);
-        p.drawText(QRectF(0, 88, width(), 50), Qt::AlignHCenter | Qt::AlignVCenter, greeting);
-        p.setFont(Theme::uiFont(14));
-        p.setPen(c.mist);
         int pages = 0, dbs = 0;
         if (ws)
             for (const PageMeta *m : ws->allLive()) {
@@ -165,6 +150,31 @@ protected:
             }
         const QString sub = QLocale(QLocale::English).toString(now.date(), QStringLiteral("dddd, MMMM d")) + QStringLiteral("   ·   ")
                             + tr("%n page(s)", nullptr, pages) + QStringLiteral("   ·   ") + tr("%n database(s)", nullptr, dbs);
+        // Keep the sky clear right behind the words.
+        QRegion clear;
+        const auto around = [&](const QFont &f, const QString &text, double cy) {
+            const QFontMetricsF fm(f);
+            const double w = fm.horizontalAdvance(text) + 24;
+            clear += QRectF(width() / 2.0 - w / 2, cy - fm.height() / 2 - 4, w, fm.height() + 8).toAlignedRect();
+        };
+        around(Theme::displayFont(36, QFont::DemiBold), greeting, 113);
+        around(Theme::uiFont(14), sub, 150);
+        clear += QRect(width() / 2 - 210, 176, 420, 52);
+        Cosmos::paintStars(p, sky.toRect(), this, 0.9 * starfield, clear);
+        p.save();
+        p.setClipRect(sky);
+        Cosmos::paintHorizon(p, QRectF(0, 40, width(), 230), 1.0);
+        QLinearGradient fade(QPointF(0, 190), QPointF(0, 270));
+        fade.setColorAt(0, Theme::withAlpha(c.basalt, 0));
+        fade.setColorAt(1, c.basalt);
+        p.fillRect(QRectF(0, 190, width(), 80), fade);
+        p.restore();
+
+        p.setFont(Theme::displayFont(36, QFont::DemiBold));
+        p.setPen(c.starlight);
+        p.drawText(QRectF(0, 88, width(), 50), Qt::AlignHCenter | Qt::AlignVCenter, greeting);
+        p.setFont(Theme::uiFont(14));
+        p.setPen(c.mist);
         p.drawText(QRectF(0, 138, width(), 24), Qt::AlignHCenter | Qt::AlignVCenter, sub);
         // Search pill.
         const QRectF search(width() / 2.0 - 200, 182, 400, 40);
@@ -211,7 +221,7 @@ protected:
                 if (hover)
                     Theme::paintSoftShadow(p, r, 12, 10, 1.0);
                 Theme::paintCard(p, r, 12, hover ? QColor(0x21, 0x21, 0x26) : QColor(0x1A, 0x1A, 0x1E));
-                const QRectF cover(r.left() + 1, r.top() + 1, r.width() - 2, 54);
+                const QRectF cover(r.left() + 1, r.top() + 1, r.width() - 2, 50);
                 QPainterPath clip;
                 clip.addRoundedRect(cover, 11, 11);
                 QPainterPath sq;
@@ -225,7 +235,7 @@ protected:
                     Cosmos::paintStars(p, cover.toRect(), this, 0.7);
                 }
                 p.restore();
-                const QRectF iconBox(r.left() + 14, r.top() + 36, 34, 34);
+                const QRectF iconBox(r.left() + 14, r.top() + 32, 34, 34);
                 p.setPen(QPen(Theme::withAlpha(QColor(255, 255, 255), 0.1), 1));
                 p.setBrush(QColor(0x1E, 0x1E, 0x23));
                 p.drawRoundedRect(iconBox, 9, 9);
@@ -233,11 +243,13 @@ protected:
                                      m->isDatabase() ? QStringLiteral("database") : QStringLiteral("page"));
                 p.setFont(Theme::uiFont(13.5, QFont::DemiBold));
                 p.setPen(c.starlight);
-                p.drawText(QRectF(r.left() + 14, r.top() + 76, r.width() - 28, 36), Qt::TextWordWrap,
-                           QFontMetricsF(p.font()).elidedText(ws->title(id), Qt::ElideRight, (r.width() - 28) * 1.8));
+                const QStringList lines = Theme::wrapLines(p.font(), ws->title(id).isEmpty() ? tr("Untitled") : ws->title(id), r.width() - 28);
+                const double lh = QFontMetricsF(p.font()).lineSpacing();
+                for (int k = 0; k < lines.size(); ++k)
+                    p.drawText(QRectF(r.left() + 14, r.top() + 74 + k * lh, r.width() - 28, lh), Qt::AlignLeft | Qt::AlignVCenter, lines[k]);
                 p.setFont(Theme::uiFont(11.5));
                 p.setPen(c.fog);
-                p.drawText(QRectF(r.left() + 14, r.bottom() - 24, r.width() - 28, 18), Qt::AlignVCenter, relativeTime(m->visited));
+                p.drawText(QRectF(r.left() + 14, r.bottom() - 27, r.width() - 28, 18), Qt::AlignVCenter, relativeTime(m->visited));
             } else if (t.action.startsWith(QLatin1String("up:"))) {
                 const QString id = t.action.mid(3);
                 Upcoming u;

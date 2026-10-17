@@ -3,6 +3,7 @@
 #include "core/Settings.h"
 #include "core/Templates.h"
 #include "core/Workspace.h"
+#include "editor/SpellChecker.h"
 #include "platform/WindowEffects.h"
 #include "ui/Cosmos.h"
 #include "ui/Icons.h"
@@ -17,6 +18,7 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLocale>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
@@ -262,6 +264,7 @@ QuickFind::QuickFind(QWidget *host)
     m_field->setFont(Theme::uiFont(16.5));
     m_field->setMinimumHeight(58);
     m_field->setTextMargins(30, 0, 0, 0);
+    m_field->setIconGeometry(19, 18);
     m_field->setStyleSheet(QStringLiteral("QLineEdit { background: transparent; border: none; border-bottom: 1px solid #26262c; "
                                           "border-radius: 0; padding: 0 18px; color: #f1f1f5; }"));
     v->addWidget(m_field);
@@ -408,7 +411,7 @@ void QuickFind::filterMenu(FlatButton *anchor, const QString &which)
             updateFilterLabels();
             refresh();
         });
-        menu->addSection(tr("Search inside"));
+        Theme::addMenuSection(menu, tr("Search inside"));
         QStringList candidates;
         for (const PageMeta *m : ws->recent(6))
             candidates.append(m->id);
@@ -636,7 +639,7 @@ QWidget *SettingsPanel::appearancePage()
     auto *stars = new QSlider(Qt::Horizontal);
     stars->setRange(0, 100);
     stars->setValue(qRound(s.starfield * 100));
-    stars->setFixedWidth(180);
+    stars->setFixedWidth(132);
     connect(stars, &QSlider::valueChanged, this, [](int v) {
         Settings::instance().starfield = v / 100.0;
         Settings::instance().apply();
@@ -683,6 +686,20 @@ QWidget *SettingsPanel::appearancePage()
         Settings::instance().apply();
     });
     v->addWidget(settingRow(tr("Show backlinks"), tr("List the pages that link to a page at its bottom."), backlinks));
+    v->addWidget(separator());
+
+    auto *spelling = new Switch;
+    const SpellChecker &checker = SpellChecker::instance();
+    spelling->setChecked(s.spellCheck && checker.isAvailable());
+    spelling->setEnabled(checker.isAvailable());
+    connect(spelling, &Switch::toggled, this, [](bool on) {
+        Settings::instance().spellCheck = on;
+        Settings::instance().apply();
+    });
+    v->addWidget(settingRow(tr("Check spelling"),
+                            checker.isAvailable() ? tr("Underline misspelled words as you type (%1).").arg(QLocale(checker.language()).nativeLanguageName())
+                                                  : tr("Needs Hunspell and a dictionary installed."),
+                            spelling));
     v->addStretch();
     return page;
 }
@@ -762,8 +779,8 @@ QWidget *SettingsPanel::shortcutsPage()
         {QStringLiteral("Ctrl+Alt+0 … 9"), tr("The same, Notion's other layout")},
         {QStringLiteral("Ctrl+Shift+E"), tr("Inline equation")},
         {QStringLiteral("Ctrl+Shift+M"), tr("Comment on the selection")},
-        {QStringLiteral("Ctrl+Shift+H"), tr("Apply the last colour again")},
-        {QStringLiteral("Ctrl+/"), tr("Block menu (turn into, colour…)")},
+        {QStringLiteral("Ctrl+Shift+H"), tr("Apply the last color again")},
+        {QStringLiteral("Ctrl+/"), tr("Block menu (turn into, color…)")},
         {QStringLiteral("Ctrl+T  /  Ctrl+W"), tr("New tab / close tab")},
         {QStringLiteral("Ctrl+Tab"), tr("Next tab")},
         {QStringLiteral("Ctrl+Shift+N"), tr("New window")},
@@ -849,7 +866,7 @@ public:
     {
         m_rects.clear();
         const int cols = 2;
-        const double gap = 12, w = (width() - gap) / cols, h = 76;
+        const double gap = 12, w = (width() - gap) / cols, h = 80;
         for (int i = 0; i < m_items.size(); ++i)
             m_rects.append(QRectF((i % cols) * (w + gap), (i / cols) * (h + gap), w, h));
         setFixedHeight(int(((m_items.size() + 1) / 2) * (h + gap)));
@@ -874,17 +891,23 @@ protected:
             p.setBrush(g);
             p.drawRoundedRect(tile, 11, 11);
             Icons::paint(p, tile.adjusted(12, 12, -12, -12), m_items[i].icon, c.starlight);
+            // Name over a description of up to two lines, centred as a block.
+            const QFont descFont = Theme::uiFont(12.5);
+            const double textW = r.right() - 16 - (tile.right() + 14);
+            const QStringList desc = Theme::wrapLines(descFont, m_items[i].description, textW);
+            const double lh = 17;
+            const double top = r.center().y() - (22 + 2 + desc.size() * lh) / 2;
             p.setFont(Theme::uiFont(14, QFont::DemiBold));
             p.setPen(c.starlight);
-            p.drawText(QRectF(tile.right() + 14, r.top() + 16, r.width() - 100, 22), Qt::AlignVCenter, m_items[i].name);
+            p.drawText(QRectF(tile.right() + 14, top, textW, 22), Qt::AlignVCenter, m_items[i].name);
             if (m_items[i].database) {
                 const double tw = QFontMetricsF(p.font()).horizontalAdvance(m_items[i].name);
-                Theme::paintPill(p, QPointF(tile.right() + 22 + tw, r.top() + 17), tr("Database"), 1, 20);
+                Theme::paintPill(p, QPointF(tile.right() + 22 + tw, top + 1), tr("Database"), 1, 20);
             }
-            p.setFont(Theme::uiFont(12.5));
+            p.setFont(descFont);
             p.setPen(c.haze);
-            p.drawText(QRectF(tile.right() + 14, r.top() + 38, r.width() - 90, 22), Qt::AlignVCenter,
-                       QFontMetricsF(p.font()).elidedText(m_items[i].description, Qt::ElideRight, r.width() - 90));
+            for (int k = 0; k < desc.size(); ++k)
+                p.drawText(QRectF(tile.right() + 14, top + 24 + k * lh, textW, lh), Qt::AlignVCenter, desc[k]);
         }
     }
     void mouseMoveEvent(QMouseEvent *e) override
@@ -913,7 +936,7 @@ private:
 }
 
 TemplateGallery::TemplateGallery(QWidget *host)
-    : ModalOverlay(host, QSize(760, 560))
+    : ModalOverlay(host, QSize(820, 586))
 {
     auto *v = new QVBoxLayout(card());
     v->setContentsMargins(28, 24, 28, 24);
@@ -940,7 +963,7 @@ TemplateGallery::TemplateGallery(QWidget *host)
     grid->setAutoFillBackground(false);
     v->addWidget(scroll);
     auto *close = new FlatButton(QStringLiteral("close"), QString(), card());
-    close->setGeometry(760 - 48, 14, 32, 32);
+    close->setGeometry(820 - 48, 14, 32, 32);
     connect(close, &FlatButton::clicked, this, &ModalOverlay::dismiss);
 }
 
@@ -1059,6 +1082,7 @@ TrashPopover::TrashPopover(QWidget *parent)
     top->addWidget(title);
     top->addStretch();
     auto *empty = new FlatButton(QStringLiteral("trash"), tr("Empty trash"));
+    m_empty = empty;
     top->addWidget(empty);
     v->addLayout(top);
     m_search = new SearchField(tr("Filter by page title…"));
@@ -1068,7 +1092,7 @@ TrashPopover::TrashPopover(QWidget *parent)
     scroll->setWidgetResizable(true);
     scroll->setFrameStyle(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->setFixedHeight(320);
+    m_scroll = scroll;
     m_list = new TrashList(scroll);
     scroll->setWidget(m_list);
     m_list->setAutoFillBackground(false);
@@ -1104,6 +1128,10 @@ void TrashPopover::refresh()
         if (q.isEmpty() || ws->title(m->id).contains(q, Qt::CaseInsensitive))
             ids.append(m->id);
     m_list->setIds(ids);
+    // As tall as the list, up to a scrolling limit; nothing to empty when empty.
+    m_scroll->setFixedHeight(qMin(320, m_list->height()));
+    m_empty->setVisible(!ws->trashedRoots().isEmpty());
+    adjustSize();
 }
 
 #include "Overlays.moc"

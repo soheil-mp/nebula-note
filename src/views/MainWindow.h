@@ -69,7 +69,8 @@ private:
     void openQuickFind();
     void openSettings();
     void openTemplates(const QString &targetPage = {});
-    void openTrash(const QPoint &globalPos);
+    // The card's bottom-left lands at `globalPos` (or its top-left).
+    void openTrash(const QPoint &globalPos, bool growUp = true);
     void importFiles(const QString &parentId = {});
     void exportPage(const QString &pageId, const QString &format);
     void exportAll();

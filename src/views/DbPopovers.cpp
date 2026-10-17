@@ -1171,7 +1171,7 @@ void bulkEdit(QWidget *parent, const QPoint &globalPos, const QString &dbId, con
     Workspace *ws = Workspace::instance();
     const Schema s = ws->schema(dbId);
     QMenu *menu = Theme::makeMenu(parent);
-    menu->addSection(tr("Edit property for %n page(s)", nullptr, int(rowIds.size())));
+    Theme::addMenuSection(menu, tr("Edit property for %n page(s)", nullptr, int(rowIds.size())));
     auto setAll = [dbId, rowIds](const QString &propId, const QJsonValue &value) {
         Workspace *ws = Workspace::instance();
         ws->batch([&] {

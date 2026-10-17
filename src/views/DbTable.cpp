@@ -253,7 +253,7 @@ void TableView::saveWidth(const QString &propId, int w)
 void TableView::calcMenu(const Property *prop, const QPoint &globalPos)
 {
     QMenu *menu = Theme::makeMenu(this);
-    menu->addSection(tr("Calculate"));
+    Theme::addMenuSection(menu, tr("Calculate"));
     const QString current = m_ctx.view.calcs.value(prop->id, QStringLiteral("none"));
     for (const QString &fn : calcFunctions(*prop)) {
         QAction *a = menu->addAction(calcName(fn));

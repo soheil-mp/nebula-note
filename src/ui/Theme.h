@@ -6,6 +6,7 @@
 #include <QRectF>
 #include <QString>
 
+class QAction;
 class QMenu;
 class QPainter;
 class QWidget;
@@ -67,6 +68,8 @@ QString pageFamily(const QString &option);
 // ---- helpers ------------------------------------------------------------------
 QColor withAlpha(QColor c, double alpha);
 QColor mix(const QColor &a, const QColor &b, double t);
+// Word-wraps `text` into at most `maxLines` lines of `width`, eliding the last.
+QStringList wrapLines(const QFont &font, const QString &text, double width, int maxLines = 2);
 
 void paintSoftShadow(QPainter &p, const QRectF &rect, double radius, int spread, double strength = 1.0);
 // Raised card: slate fill, hairline border and a faint rim light.
@@ -77,6 +80,8 @@ void paintHover(QPainter &p, const QRectF &rect, double amount, double radius = 
 // Rounded, frameless menus with the Nebula look.
 void polishMenu(QMenu *menu);
 QMenu *makeMenu(QWidget *parent);
+// A small caption heading a group of menu items (instead of QMenu::addSection).
+QAction *addMenuSection(QMenu *menu, const QString &text);
 
 constexpr int kRadius = 12; // window corners
 int animMs(int ms);         // ms, or 0 when reduced motion is on

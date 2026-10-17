@@ -119,7 +119,7 @@ DatabaseBody::DatabaseBody(QWidget *parent, bool inlineMode)
     connect(m_sortBtn, &FlatButton::clicked, this, [this] { showSorts(m_sortBtn->mapToGlobal(QPoint(-200, m_sortBtn->height() + 4))); });
     connect(m_settingsBtn, &FlatButton::clicked, this, [this] { showSettings(m_settingsBtn->mapToGlobal(QPoint(-280, m_settingsBtn->height() + 4))); });
     connect(m_newBtn, &FlatButton::clicked, this, &DatabaseBody::createRowAndOpen);
-    connect(m_newMenuBtn, &FlatButton::clicked, this, [this] { newMenu(m_newMenuBtn->mapToGlobal(QPoint(-220, m_newMenuBtn->height() + 4))); });
+    connect(m_newMenuBtn, &FlatButton::clicked, this, [this] { newMenu(m_newMenuBtn->mapToGlobal(QPoint(m_newMenuBtn->width(), m_newMenuBtn->height() + 4))); });
     connect(m_lockBadge, &FlatButton::clicked, this, [this] {
         Workspace *ws = Workspace::instance();
         Schema s = ws->schema(m_dbId);
@@ -688,7 +688,7 @@ void DatabaseBody::viewMenu(const QString &viewId, const QPoint &globalPos)
             v = x;
     if (v.id.isEmpty())
         return;
-    menu->addSection(v.name);
+    Theme::addMenuSection(menu, v.name);
     if (!m_schema.locked) {
         menu->addAction(Icons::icon(QStringLiteral("settings")), tr("Edit view…"), this, [this, viewId, globalPos] {
             selectView(viewId);
@@ -715,7 +715,7 @@ void DatabaseBody::viewMenu(const QString &viewId, const QPoint &globalPos)
 void DatabaseBody::addViewMenu(const QPoint &globalPos)
 {
     QMenu *menu = Theme::makeMenu(this);
-    menu->addSection(tr("Add a view"));
+    Theme::addMenuSection(menu, tr("Add a view"));
     for (ViewType t : {ViewType::Table, ViewType::Board, ViewType::List, ViewType::Gallery, ViewType::Calendar, ViewType::Timeline, ViewType::Chart,
                        ViewType::Feed, ViewType::Form})
         menu->addAction(Icons::icon(viewTypeIcon(t)), viewTypeName(t), this, [this, t] { addView(t); });
@@ -741,7 +741,7 @@ void DatabaseBody::newMenu(const QPoint &globalPos)
 {
     Workspace *ws = Workspace::instance();
     QMenu *menu = Theme::makeMenu(this);
-    menu->addSection(tr("Templates for %1").arg(ws->title(m_dbId).isEmpty() ? tr("this database") : ws->title(m_dbId)));
+    Theme::addMenuSection(menu, tr("Templates for %1").arg(ws->title(m_dbId).isEmpty() ? tr("this database") : ws->title(m_dbId)));
     const QList<const PageMeta *> templates = ws->templates(m_dbId);
     for (const PageMeta *t : templates) {
         const QString id = t->id;
@@ -763,10 +763,6 @@ void DatabaseBody::newMenu(const QPoint &globalPos)
         sub->addAction(Icons::icon(QStringLiteral("copy")), tr("Duplicate"), this, [id] { Workspace::instance()->duplicate(id); });
         sub->addAction(Icons::icon(QStringLiteral("trash")), tr("Delete"), this, [id] { Workspace::instance()->trash(id); });
     }
-    if (templates.isEmpty()) {
-        QAction *none = menu->addAction(tr("No templates yet"));
-        none->setEnabled(false);
-    }
     menu->addAction(Icons::icon(QStringLiteral("page-empty")), tr("Empty page"), this, [this] {
         const QString id = Workspace::instance()->createRow(m_dbId);
         openRow(id);
@@ -777,7 +773,8 @@ void DatabaseBody::newMenu(const QPoint &globalPos)
         if (!id.isEmpty())
             emit openPage(id);
     });
-    menu->popup(globalPos);
+    // Hangs from the button's right edge, like the toolbar it belongs to.
+    menu->popup(globalPos - QPoint(menu->sizeHint().width(), 0));
 }
 
 void DatabaseBody::openRow(const QString &rowId)

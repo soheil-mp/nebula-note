@@ -264,8 +264,8 @@ private slots:
 
         const QString p1 = m_ws->createRow(projects, QStringLiteral("Apollo"));
         const QString p2 = m_ws->createRow(projects, QStringLiteral("Gemini"));
-        const QString t1 = m_ws->createRow(tasks, QStringLiteral("Design"), {{"hours", 3.0}, {"done", true}, {"due", "2026-10-01"}});
-        const QString t2 = m_ws->createRow(tasks, QStringLiteral("Build"), {{"hours", 5.0}, {"due", "2026-10-09"}});
+        const QString t1 = m_ws->createRow(tasks, QStringLiteral("Design"), {{"hours", 3.0}, {"done", true}, {"due", "2019-10-01"}});
+        const QString t2 = m_ws->createRow(tasks, QStringLiteral("Build"), {{"hours", 5.0}, {"due", "2019-10-09"}});
         m_ws->setProp(t1, rel, QJsonArray{p1});
         m_ws->setProp(t2, rel, QJsonArray{p1});
         QCOMPARE(relationIds(m_ws->props(p1).value(pair)), QStringList({t1, t2}));
@@ -300,7 +300,7 @@ private slots:
         QCOMPARE(val(p1, "sum"), QStringLiteral("8"));
         QCOMPARE(val(p1, "pct"), QStringLiteral("50%"));
         QCOMPARE(val(p1, "names"), QStringLiteral("Design, Build"));
-        QCOMPARE(val(p1, "latest"), QStringLiteral("Oct 9, 2026"));
+        QCOMPARE(val(p1, "latest"), QStringLiteral("Oct 9, 2019"));
         QCOMPARE(val(p1, "span"), QStringLiteral("8 days"));
         QCOMPARE(val(p2, "sum"), QStringLiteral("6"));
         QCOMPARE(displayValue(relProp, m_ws->props(t2).value(rel)), QStringLiteral("Apollo, Gemini"));
@@ -476,9 +476,9 @@ private slots:
         s.props.append(makeProp("ok", "OK", PropType::Checkbox));
         s.props.append(makeProp("d", "When", PropType::Date));
         const QString db = m_ws->createDatabase({}, "G", s);
-        m_ws->createRow(db, "r1", {{"sel", "a"}, {"tg", QJsonArray{"x", "y"}}, {"n", 1.0}, {"ok", true}, {"d", "2026-01-05"}});
-        m_ws->createRow(db, "r2", {{"sel", "a"}, {"tg", QJsonArray{"y"}}, {"n", 4.0}, {"d", "2026-01-20"}});
-        m_ws->createRow(db, "r3", {{"n", 25.0}, {"d", "2026-03-02"}});
+        m_ws->createRow(db, "r1", {{"sel", "a"}, {"tg", QJsonArray{"x", "y"}}, {"n", 1.0}, {"ok", true}, {"d", "2019-01-05"}});
+        m_ws->createRow(db, "r2", {{"sel", "a"}, {"tg", QJsonArray{"y"}}, {"n", 4.0}, {"d", "2019-01-20"}});
+        m_ws->createRow(db, "r3", {{"n", 25.0}, {"d", "2019-03-02"}});
         m_ws->createRow(db, "r4", {{"sel", "c"}});
         const Schema live = m_ws->schema(db);
         QList<RowRef> rows;
@@ -500,7 +500,7 @@ private slots:
         QCOMPARE(g[y].rows.size(), 2); // r1 is in both X and Y
         g = groupRows(live, *live.prop("d"), rows, "month");
         QCOMPARE(g.size(), 3);
-        QCOMPARE(g[0].label, QStringLiteral("January 2026"));
+        QCOMPARE(g[0].label, QStringLiteral("January 2019"));
         QCOMPARE(g[0].rows.size(), 2);
         QCOMPARE(g.last().key, QString()); // no date last
         g = groupRows(live, *live.prop("n"), rows, {}, 10);
@@ -527,8 +527,8 @@ private slots:
         QCOMPARE(calculate(*live.prop("ok"), rows, "pctunchecked"), QStringLiteral("75%"));
         QCOMPARE(calculate(*live.prop("tg"), rows, "values"), QStringLiteral("3"));
         QCOMPARE(calculate(*live.prop("tg"), rows, "unique"), QStringLiteral("2"));
-        QCOMPARE(calculate(*live.prop("d"), rows, "earliest"), QStringLiteral("Jan 5, 2026"));
-        QCOMPARE(calculate(*live.prop("d"), rows, "latest"), QStringLiteral("Mar 2, 2026"));
+        QCOMPARE(calculate(*live.prop("d"), rows, "earliest"), QStringLiteral("Jan 5, 2019"));
+        QCOMPARE(calculate(*live.prop("d"), rows, "latest"), QStringLiteral("Mar 2, 2019"));
         QCOMPARE(calculate(*live.prop("d"), rows, "daterange"), QStringLiteral("56 days"));
         QCOMPARE(calculate(*live.prop("title"), rows, "count"), QStringLiteral("4"));
         QVERIFY(calcFunctions(n).contains("sum"));
@@ -546,7 +546,14 @@ private slots:
         QVERIFY(dateHasReminder(QStringLiteral("2026-10-01#r")));
         QCOMPARE(makeDateValue(QDateTime(QDate(2026, 1, 2), QTime(9, 30)), true, QDateTime(QDate(2026, 1, 2), QTime(11, 0)), true),
                  QStringLiteral("2026-01-02T09:30/2026-01-02T11:00#r"));
-        QCOMPARE(formatDateFor(d, "2026-10-01/2026-10-05"), QStringLiteral("Oct 1, 2026 → Oct 5, 2026"));
+        QCOMPARE(formatDateFor(d, "2019-10-01/2019-10-05"), QStringLiteral("Oct 1, 2019 → Oct 5, 2019"));
+        {
+            // This year's dates leave the year out, unless a range crosses into another.
+            const int y = QDate::currentDate().year();
+            QCOMPARE(formatDateFor(d, QStringLiteral("%1-03-04").arg(y)), QStringLiteral("Mar 4"));
+            QCOMPARE(formatDateFor(d, QStringLiteral("%1-12-30/%2-01-02").arg(y).arg(y + 1)),
+                     QStringLiteral("Dec 30, %1 → Jan 2, %2").arg(y).arg(y + 1));
+        }
         d.dateFormat = QStringLiteral("dmy");
         d.time24 = true;
         QCOMPARE(formatDateFor(d, "2026-10-01T18:05"), QStringLiteral("01/10/2026 18:05"));

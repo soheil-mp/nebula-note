@@ -355,7 +355,7 @@ private:
         Workspace *ws = Workspace::instance();
         const Property *prop = ws->schema(m_db).prop(m_propId);
         if (prop && prop->type == PropType::Status) {
-            menu->addSection(tr("Group"));
+            Theme::addMenuSection(menu, tr("Group"));
             const QStringList groups = {tr("To-do"), tr("In progress"), tr("Complete")};
             for (int g = 0; g < 3; ++g) {
                 QAction *a = menu->addAction(Icons::icon(statusGlyph(g)), groups[g]);
@@ -370,7 +370,7 @@ private:
                 });
             }
         }
-        menu->addSection(tr("Shade"));
+        Theme::addMenuSection(menu, tr("Shade"));
         for (int s = 0; s < kOptionShadeCount; ++s) {
             QPixmap swatch(28, 16);
             swatch.fill(Qt::transparent);
@@ -1386,7 +1386,7 @@ void showPropertyMenu(QWidget *parent, const QPoint &globalPos, const QString &d
     if (!prop)
         return;
     QMenu *menu = Theme::makeMenu(parent);
-    menu->addSection(prop->name);
+    Theme::addMenuSection(menu, prop->name);
     QAction *rename = menu->addAction(Icons::icon(QStringLiteral("pencil")), tr("Rename"));
     QObject::connect(rename, &QAction::triggered, parent, [parent, databaseId, propId] {
         Workspace *ws = Workspace::instance();
@@ -1734,7 +1734,7 @@ void showPropertyMenu(QWidget *parent, const QPoint &globalPos, const QString &d
 void addProperty(QWidget *parent, const QPoint &globalPos, const QString &databaseId, const QString &viewId)
 {
     QMenu *menu = Theme::makeMenu(parent);
-    menu->addSection(tr("New property"));
+    Theme::addMenuSection(menu, tr("New property"));
     for (PropType t : userPropTypes()) {
         QAction *a = menu->addAction(Icons::icon(propTypeIcon(t)), propTypeName(t));
         QObject::connect(a, &QAction::triggered, parent, [parent, databaseId, viewId, t] {

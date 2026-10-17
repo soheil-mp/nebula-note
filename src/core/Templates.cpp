@@ -177,7 +177,7 @@ QList<Info> all()
         {QStringLiteral("journal"), tr("Daily journal"), tr("Gratitude, focus and a short reflection."), QStringLiteral("moon"), false},
         {QStringLiteral("project"), tr("Project brief"), tr("Goals, scope, milestones and risks on one page."), QStringLiteral("rocket"), false},
         {QStringLiteral("weekly"), tr("Weekly plan"), tr("Seven days, each with its own to-dos."), QStringLiteral("calendar"), false},
-        {QStringLiteral("book"), tr("Book notes"), tr("Summary, key ideas and favourite quotes."), QStringLiteral("book"), false},
+        {QStringLiteral("book"), tr("Book notes"), tr("Summary, key ideas and favorite quotes."), QStringLiteral("book"), false},
         {QStringLiteral("wiki"), tr("Personal wiki"), tr("A home page with sections for everything you know."), QStringLiteral("globe"), false},
         {QStringLiteral("tasks"), tr("Task board"), tr("Kanban board with status, priority and due dates."), QStringLiteral("board"), true},
         {QStringLiteral("reading"), tr("Reading list"), tr("A shelf of books with ratings and genres."), QStringLiteral("gallery"), true},
@@ -317,7 +317,7 @@ QString createSampleWorkspace(Workspace &ws)
                                      "- Hover a block and grab the ⋮⋮ handle to drag it somewhere else\n"
                                      "- Press Tab to nest a block under the one above\n"
                                     "    - Nested blocks move with their parent\n"
-                                     "- Select text for the formatting bar, with gray **shades** instead of colours\n\n"
+                                     "- Select text for the formatting bar, with gray **shades** instead of colors\n\n"
                                      "- [x] Open Nebula Note\n- [x] Read the welcome page\n- [ ] Create your first page with Ctrl+N\n- [ ] Import your Notion "
                                      "workspace from the sidebar\n\n"
                                      "<details>\n<summary>Toggles hide what you don't need right now</summary>\n\nClick the arrow to fold "
@@ -325,7 +325,7 @@ QString createSampleWorkspace(Workspace &ws)
                                      "> The nitrogen in our DNA, the calcium in our teeth, the iron in our blood were made in the interiors of "
                                      "collapsing stars. — Carl Sagan\n\n"
                                      "```cpp\n// Code blocks are highlighted in grayscale.\nint main() {\n    return launch(\"Nebula Note\");\n}\n```\n\n"
-                                     "---\n\n## Organise with databases\n\nDatabases are pages full of pages. Each one can be seen as a table, "
+                                     "---\n\n## Organize with databases\n\nDatabases are pages full of pages. Each one can be seen as a table, "
                                      "a board, a list, a gallery or a calendar, with filters and sorts per view.\n"),
                                  {QStringLiteral("sparkle")});
         blocks += {pageLink(projects), pageLink(reading), pageLink(journal)};
@@ -379,7 +379,7 @@ QString createSampleWorkspace(Workspace &ws)
             {tr("Launch Nebula Note 1.0"), QStringLiteral("doing"), QStringLiteral("high"), 5, {QStringLiteral("eng"), QStringLiteral("design")}, QStringLiteral("Noah"),
              QStringLiteral("## Checklist\n\n- [x] Block editor\n- [x] Databases\n- [ ] Release notes\n- [ ] Screenshots"), QStringLiteral("cosmos:horizon:11")},
             {tr("Design system refresh"), QStringLiteral("done"), QStringLiteral("med"), -12, {QStringLiteral("design")}, QStringLiteral("Ava"),
-             QStringLiteral("Shades replace colours: ten pill styles from graphite to starlight."), QStringLiteral("cosmos:ringed:5")},
+             QStringLiteral("Shades replace colors: ten pill styles from graphite to starlight."), QStringLiteral("cosmos:ringed:5")},
             {tr("Write the user guide"), QStringLiteral("doing"), QStringLiteral("med"), 9, {QStringLiteral("writing")}, QStringLiteral("Noah"),
              QStringLiteral("Start with the keyboard shortcuts page."), QString()},
             {tr("Import the old Notion workspace"), QStringLiteral("todo"), QStringLiteral("high"), 2, {QStringLiteral("research")}, QString(),
@@ -537,7 +537,7 @@ QString createSampleWorkspace(Workspace &ws)
             bookmark.type = BlockType::Bookmark;
             bookmark.url = QStringLiteral("https://science.nasa.gov/solar-system/");
             bookmark.data.insert(QStringLiteral("title"), tr("Our Solar System"));
-            bookmark.data.insert(QStringLiteral("desc"), tr("Explore the planets, moons and small bodies of our cosmic neighbourhood."));
+            bookmark.data.insert(QStringLiteral("desc"), tr("Explore the planets, moons and small bodies of our cosmic neighborhood."));
             g.append(bookmark);
             g += md(QStringLiteral("## %1\n").arg(tr("Diagrams")));
             Block mermaid = Block::make(BlockType::Code, QStringLiteral("graph LR") + QChar::LineSeparator + QStringLiteral("    A[Dust cloud] --> B(Protostar)")

@@ -59,13 +59,16 @@ endif()
 file(GLOB NEBULA_FONTS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts/*.otf
     ${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts/*.ttf)
+# Small images the stylesheet uses (dropdown and submenu arrows, check marks).
+file(GLOB NEBULA_UI_IMAGES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/ui/*.svg)
 
 qt_add_executable(nebula-note WIN32 src/main.cpp)
 target_link_libraries(nebula-note PRIVATE nebula_ui)
 qt_add_resources(nebula-note "nebula_assets"
     PREFIX "/"
     BASE resources
-    FILES ${NEBULA_FONTS} resources/icons/app/nebula.svg)
+    FILES ${NEBULA_FONTS} ${NEBULA_UI_IMAGES} resources/icons/app/nebula.svg)
 
 include(GNUInstallDirs)
 install(TARGETS nebula-note RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -95,7 +98,7 @@ target_link_libraries(nebula_editor_tests PRIVATE nebula_ui Qt6::Test)
 qt_add_resources(nebula_editor_tests "nebula_test_assets"
     PREFIX "/"
     BASE resources
-    FILES ${NEBULA_FONTS} resources/icons/app/nebula.svg)
+    FILES ${NEBULA_FONTS} ${NEBULA_UI_IMAGES} resources/icons/app/nebula.svg)
 add_test(NAME nebula_editor_tests COMMAND nebula_editor_tests)
 set_tests_properties(nebula_editor_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;NEBULA_NO_NOTIFY=1")
 
@@ -104,7 +107,7 @@ target_link_libraries(nebula_blocks_tests PRIVATE nebula_ui Qt6::Test)
 qt_add_resources(nebula_blocks_tests "nebula_test_assets"
     PREFIX "/"
     BASE resources
-    FILES ${NEBULA_FONTS} resources/icons/app/nebula.svg)
+    FILES ${NEBULA_FONTS} ${NEBULA_UI_IMAGES} resources/icons/app/nebula.svg)
 add_test(NAME nebula_blocks_tests COMMAND nebula_blocks_tests)
 set_tests_properties(nebula_blocks_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;NEBULA_NO_NOTIFY=1")
 
@@ -113,7 +116,7 @@ target_link_libraries(nebula_dbui_tests PRIVATE nebula_ui Qt6::Test)
 qt_add_resources(nebula_dbui_tests "nebula_dbui_test_assets"
     PREFIX "/"
     BASE resources
-    FILES ${NEBULA_FONTS} resources/icons/app/nebula.svg)
+    FILES ${NEBULA_FONTS} ${NEBULA_UI_IMAGES} resources/icons/app/nebula.svg)
 add_test(NAME nebula_dbui_tests COMMAND nebula_dbui_tests)
 set_tests_properties(nebula_dbui_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;NEBULA_NO_NOTIFY=1")
 
@@ -122,6 +125,6 @@ target_link_libraries(nebula_app_tests PRIVATE nebula_ui Qt6::Test)
 qt_add_resources(nebula_app_tests "nebula_app_test_assets"
     PREFIX "/"
     BASE resources
-    FILES ${NEBULA_FONTS} resources/icons/app/nebula.svg)
+    FILES ${NEBULA_FONTS} ${NEBULA_UI_IMAGES} resources/icons/app/nebula.svg)
 add_test(NAME nebula_app_tests COMMAND nebula_app_tests)
 set_tests_properties(nebula_app_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;NEBULA_NO_NOTIFY=1")

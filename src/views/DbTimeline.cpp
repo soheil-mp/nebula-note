@@ -11,12 +11,15 @@
 
 #include <QContextMenuEvent>
 #include <QFontMetricsF>
+#include <QLineF>
 #include <QLocale>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QScrollArea>
 #include <QScrollBar>
+
+#include <algorithm>
 
 using namespace DbViewsPrivate;
 
@@ -299,22 +302,29 @@ void TimelineView::paintEvent(QPaintEvent *e)
                     continue;
                 const QRectF a = m_bars[bi].rect, b = m_bars[i].rect;
                 const bool conflict = m_bars[bi].end >= m_bars[i].start;
-                QPainterPath path;
-                path.moveTo(a.right(), a.center().y());
+                // An elbow route with rounded corners.
+                QList<QPointF> pts{QPointF(a.right(), a.center().y())};
                 if (b.left() - 10 >= a.right() + 10) {
-                    const double midX = b.left() - 10;
-                    path.lineTo(midX, a.center().y());
-                    path.lineTo(midX, b.center().y());
+                    const double midX = b.left() - 12;
+                    pts << QPointF(midX, a.center().y()) << QPointF(midX, b.center().y());
                 } else {
                     // The blocked item starts before its blocker ends: route back
                     // between the rows, then into the start of the bar.
                     const double gapY = a.center().y() < b.center().y() ? b.top() - 5 : b.bottom() + 5;
-                    path.lineTo(a.right() + 10, a.center().y());
-                    path.lineTo(a.right() + 10, gapY);
-                    path.lineTo(b.left() - 12, gapY);
-                    path.lineTo(b.left() - 12, b.center().y());
+                    pts << QPointF(a.right() + 12, a.center().y()) << QPointF(a.right() + 12, gapY) << QPointF(b.left() - 14, gapY)
+                        << QPointF(b.left() - 14, b.center().y());
                 }
-                path.lineTo(b.left() - 2, b.center().y());
+                pts << QPointF(b.left() - 2, b.center().y());
+                QPainterPath path(pts.first());
+                for (int k = 1; k + 1 < pts.size(); ++k) {
+                    const QPointF prev = pts[k - 1], at = pts[k], next = pts[k + 1];
+                    const double r = std::min({6.0, QLineF(prev, at).length() / 2, QLineF(at, next).length() / 2});
+                    const QPointF in = at + (prev - at) * (r / qMax(0.01, QLineF(prev, at).length()));
+                    const QPointF out = at + (next - at) * (r / qMax(0.01, QLineF(at, next).length()));
+                    path.lineTo(in);
+                    path.quadTo(at, out);
+                }
+                path.lineTo(pts.last());
                 QPen pen(conflict ? c.haze : c.dust, 1.3);
                 if (conflict)
                     pen.setStyle(Qt::DashLine);
@@ -357,7 +367,8 @@ void TimelineView::paintEvent(QPaintEvent *e)
         p.setFont(Theme::uiFont(12.5, QFont::Medium));
         const QString title = titleOf(r);
         const double tw2 = QFontMetricsF(p.font()).horizontalAdvance(title);
-        if (bar.rect.right() - x - 8 >= qMin(tw2, 60.0)) {
+        // Inside the bar when the whole title fits, else beside it.
+        if (bar.rect.right() - x - 8 >= tw2) {
             p.setPen(c.starlight);
             p.drawText(QRectF(x, bar.rect.top(), bar.rect.right() - x - 8, bar.rect.height()), Qt::AlignVCenter,
                        QFontMetricsF(p.font()).elidedText(title, Qt::ElideRight, bar.rect.right() - x - 8));

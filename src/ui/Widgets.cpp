@@ -175,6 +175,8 @@ void Switch::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     const double t = m_anim.state() == QAbstractAnimation::Running ? m_anim.currentValue().toDouble() : (isChecked() ? 1.0 : 0.0);
+    if (!isEnabled())
+        p.setOpacity(0.4);
     const QRectF track(1, 2, width() - 2, height() - 4);
     p.setPen(QPen(Theme::mix(c.ash, c.mist, t), 1));
     p.setBrush(Theme::mix(c.graphite, c.moon, t));
@@ -202,7 +204,7 @@ void SearchField::paintEvent(QPaintEvent *e)
     QLineEdit::paintEvent(e);
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    Icons::paint(p, QRectF(10, (height() - 15) / 2.0, 15, 15), QStringLiteral("search"), Theme::colors().fog);
+    Icons::paint(p, QRectF(m_iconX, (height() - m_iconSize) / 2.0, m_iconSize, m_iconSize), QStringLiteral("search"), Theme::colors().fog);
 }
 
 // ---- Toast -----------------------------------------------------------------------
