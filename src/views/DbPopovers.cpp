@@ -662,6 +662,7 @@ public:
         m_layout->setContentsMargins(10, 10, 10, 10);
         m_layout->setSpacing(2);
         m_scroll->setWidget(inner);
+        inner->setAutoFillBackground(false); // setWidget turns it on
         outer->addWidget(m_scroll);
         rebuild();
     }
@@ -1173,7 +1174,10 @@ private:
         QTimer::singleShot(0, this, [this] {
             const QSize hint = m_layout->sizeHint();
             m_scroll->setFixedSize(hint.width() + 4, qMin(hint.height() + 2, 560));
-            adjustSize();
+            // Grow or shrink with the page (a top-level adjustSize won't shrink).
+            content()->layout()->activate();
+            layout()->activate();
+            resize(sizeHint());
         });
     }
 
