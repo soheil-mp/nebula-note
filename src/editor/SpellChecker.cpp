@@ -85,6 +85,9 @@ bool SpellChecker::isCorrect(const QString &word)
         QStringLiteral("inline"),   QStringLiteral("sqlite"),  QStringLiteral("pdf"),      QStringLiteral("gif"),
         QStringLiteral("gifs"),     QStringLiteral("unsplash"), QStringLiteral("dropdown"), QStringLiteral("checkbox"),
         QStringLiteral("checkboxes"), QStringLiteral("rollup"), QStringLiteral("rollups"), QStringLiteral("timeline"),
+        QStringLiteral("grayscale"), QStringLiteral("perchlorate"), QStringLiteral("perchlorates"), QStringLiteral("regolith"),
+        QStringLiteral("starfield"), QStringLiteral("exoplanet"), QStringLiteral("exoplanets"), QStringLiteral("roadmap"),
+        QStringLiteral("roadmaps"), QStringLiteral("protostar"), QStringLiteral("protostars"),
     };
     if (known.contains(word.toLower()))
         return true;
