@@ -102,7 +102,7 @@ void TopBar::relayout()
     }
 
     // Breadcrumbs between.
-    const double maxRight = r - 12;
+    double maxRight = r - 12;
     QList<Crumb> all;
     if (m) {
         for (const QString &a : ws->ancestors(m_pageId)) {
@@ -137,12 +137,47 @@ void TopBar::relayout()
         else
             break;
     }
-    for (Crumb &c : shown) {
-        double w = widthOf(c);
-        if (x + w > maxRight)
-            w = qMax(40.0, maxRight - x);
-        c.rect = QRectF(x, cy - 14, w, 28);
-        x += w + 14;
+    // Still too tight: the "Edited" note goes first.
+    if (total() > maxRight - x && !m_edited.isEmpty()) {
+        const double freed = m_editedRect.width() + 12;
+        for (Hit &h : m_hits)
+            if (h.id == QLatin1String("unlock"))
+                h.rect.translate(freed, 0); // the Locked chip slides over
+        maxRight += freed;
+        m_edited.clear();
+    }
+    // Then the current page keeps its full title as long as it can, and the
+    // crumbs before it share what's left.
+    QList<double> widths;
+    for (const Crumb &c : shown)
+        widths.append(widthOf(c));
+    const double room = maxRight - x - 14 * shown.size();
+    double sum = 0;
+    for (double w : widths)
+        sum += w;
+    if (sum > room && !widths.isEmpty()) {
+        const int n = int(widths.size());
+        double others = 0;
+        for (int i = 0; i < n - 1; ++i)
+            others += shown[i].ellipsis ? widths[i] : 40;
+        widths.last() = qMax(40.0, qMin(widths.last(), room - others));
+        // Earlier crumbs split the remainder in proportion to their wants.
+        double left = room - widths.last();
+        double want = 0;
+        for (int i = 0; i < n - 1; ++i)
+            if (shown[i].ellipsis)
+                left -= widths[i];
+        for (int i = 0; i < n - 1; ++i)
+            if (!shown[i].ellipsis)
+                want += widths[i];
+        for (int i = 0; i < n - 1; ++i)
+            if (!shown[i].ellipsis && want > 0)
+                widths[i] = qMax(40.0, qMin(widths[i], left * widths[i] / want));
+    }
+    for (int i = 0; i < shown.size(); ++i) {
+        Crumb &c = shown[i];
+        c.rect = QRectF(x, cy - 14, widths[i], 28);
+        x += widths[i] + 14;
         m_crumbs.append(c);
         if (!c.ellipsis)
             m_hits.append({QStringLiteral("crumb:") + c.id, c.rect, QString()});
