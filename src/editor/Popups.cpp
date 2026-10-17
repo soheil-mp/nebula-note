@@ -200,7 +200,8 @@ void CommandPopup::paintEvent(QPaintEvent *)
             else
                 Icons::paint(p, tile.adjusted(8, 8, -8, -8), it.icon, c.moon);
             x = tile.right() + 11;
-        } else if (!it.icon.isEmpty()) {
+        } else if (!it.icon.isEmpty() || it.pageIcon) {
+            // Pages without an icon of their own still get the page glyph.
             const QRectF iconRect(x, row.center().y() - 9, 18, 18);
             if (it.pageIcon)
                 Icons::paintPageIcon(p, iconRect, it.icon, c.mist, QStringLiteral("page"));
