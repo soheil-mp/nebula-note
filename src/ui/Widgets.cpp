@@ -272,7 +272,8 @@ void Toast::show(const QString &message, const QString &action, std::function<vo
     const QFontMetricsF fm(Theme::uiFont(13, QFont::Medium));
     const int w = int(fm.horizontalAdvance(message) + (action.isEmpty() ? 0 : fm.horizontalAdvance(action) + 28) + 48);
     QWidget *host = parentWidget();
-    setGeometry((host->width() - w) / 2, host->height() - 76, w, 44);
+    const QRect area = m_area.isValid() ? m_area : host->rect();
+    setGeometry(area.left() + (area.width() - w) / 2, area.bottom() - 72, w, 44);
     QWidget::show();
     raise();
     m_fade.setDirection(QAbstractAnimation::Forward);
@@ -289,6 +290,7 @@ void Toast::paintEvent(QPaintEvent *)
     p.setOpacity(t);
     p.translate(0, (1 - t) * 8);
     const QRectF card = QRectF(rect()).adjusted(4, 4, -4, -4);
+    Theme::paintSoftShadow(p, card, card.height() / 2, 4, 1.0);
     Theme::paintCard(p, card, card.height() / 2, QColor(0x22, 0x22, 0x28));
     p.setFont(Theme::uiFont(13, QFont::Medium));
     p.setPen(c.moon);

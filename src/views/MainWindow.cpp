@@ -572,6 +572,7 @@ void MainWindow::flushAll()
 
 void MainWindow::toast(const QString &message, const QString &action, std::function<void()> onAction)
 {
+    m_toast->setArea(QRect(m_stack->mapTo(this, QPoint(0, 0)), m_stack->size()));
     m_toast->show(message, action, std::move(onAction));
 }
 

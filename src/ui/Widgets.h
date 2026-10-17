@@ -111,12 +111,15 @@ public:
     explicit Toast(QWidget *host);
     void show(const QString &message, const QString &action = {}, std::function<void()> onAction = {});
     QString message() const { return m_message; }
+    // The part of the host the toast centres in (the page, beside the sidebar).
+    void setArea(const QRect &area) { m_area = area; }
 
 protected:
     void paintEvent(QPaintEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
 
 private:
+    QRect m_area;
     QString m_message;
     QString m_action;
     std::function<void()> m_onAction;
