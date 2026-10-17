@@ -5,6 +5,7 @@
 #include "ui/Icons.h"
 #include "ui/Theme.h"
 
+#include <QFontMetricsF>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
@@ -57,6 +58,7 @@ FormulaEditor::FormulaEditor(QWidget *parent, const QString &databaseId, const Q
     m_list = new QListWidget;
     m_list->setFixedSize(230, 260);
     m_list->setFont(Theme::uiFont(13));
+    m_list->setIconSize(QSize(15, 15));
     row->addWidget(m_list);
     m_help = new QLabel;
     m_help->setWordWrap(true);
@@ -195,15 +197,21 @@ void FormulaEditor::updatePreview()
         if (v.isNull()) {
             const QString err = formulaError(probe, ref);
             if (!err.isEmpty()) {
+                m_result->setTextFormat(Qt::PlainText);
                 m_result->setText(tr("⚠ %1").arg(err));
                 return;
             }
         }
         Property disp = probe;
         disp.formulaType = v.isDouble() ? QStringLiteral("number") : v.isBool() ? QStringLiteral("bool") : QStringLiteral("text");
-        shown.append(QStringLiteral("%1 → %2").arg(ws->title(row->id), v.isNull() ? tr("(empty)") : displayValue(disp, v)));
+        // One row per line: the page in gray, its result bright.
+        const QString title = ws->title(row->id).isEmpty() ? tr("Untitled") : ws->title(row->id);
+        shown.append(QStringLiteral("<span style=\"color:#7a7a86\">%1</span>&nbsp;&nbsp;→&nbsp;&nbsp;%2")
+                         .arg(QFontMetricsF(m_result->font()).elidedText(title, Qt::ElideRight, 260).toHtmlEscaped(),
+                              (v.isNull() ? tr("(empty)") : displayValue(disp, v)).toHtmlEscaped()));
     }
-    m_result->setText(shown.isEmpty() ? tr("No rows to preview yet.") : shown.join(QStringLiteral("   ·   ")));
+    m_result->setTextFormat(Qt::RichText);
+    m_result->setText(shown.isEmpty() ? tr("No rows to preview yet.") : shown.join(QStringLiteral("<br>")));
 }
 
 void FormulaEditor::save()

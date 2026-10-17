@@ -30,19 +30,43 @@ Popover::Popover(QWidget *parent)
     setFont(Theme::uiFont(13));
 }
 
+QRect Popover::allowedArea(const QPoint &globalPos) const
+{
+    QScreen *screen = QGuiApplication::screenAt(globalPos);
+    if (!screen)
+        return {};
+    QRect avail = screen->availableGeometry();
+    // Stay inside the window when the card fits in it, as Notion's do…
+    if (QWidget *host = parentWidget() ? parentWidget()->window() : nullptr) {
+        // …with a little air between card and window edge.
+        const QRect win = QRect(host->mapToGlobal(QPoint(0, 0)), host->size()).adjusted(8, 8, -8, -8);
+        if (height() - 2 * kShadow <= win.height() && width() - 2 * kShadow <= win.width())
+            avail = avail.intersected(win);
+    }
+    return avail;
+}
+
+void Popover::resizeEvent(QResizeEvent *e)
+{
+    QWidget::resizeEvent(e);
+    // A card that grew (a settings page, a longer list) moves back inside.
+    if (!isVisible())
+        return;
+    const QRect avail = allowedArea(geometry().center());
+    if (avail.isEmpty())
+        return;
+    QPoint pos = this->pos();
+    pos.setX(qBound(avail.left() - kShadow, pos.x(), qMax(avail.left() - kShadow, avail.right() - width() + kShadow)));
+    pos.setY(qBound(avail.top() - kShadow + 6, pos.y(), qMax(avail.top() - kShadow + 6, avail.bottom() - height() + kShadow + 6)));
+    if (pos != this->pos())
+        move(pos);
+}
+
 void Popover::popupAt(const QPoint &globalPos)
 {
     adjustSize();
     QPoint pos = globalPos - QPoint(kShadow, kShadow - 6);
-    if (QScreen *screen = QGuiApplication::screenAt(globalPos)) {
-        QRect avail = screen->availableGeometry();
-        // Stay inside the window when the card fits in it, as Notion's do.
-        if (QWidget *host = parentWidget() ? parentWidget()->window() : nullptr) {
-            // …with a little air between card and window edge.
-            const QRect win = QRect(host->mapToGlobal(QPoint(0, 0)), host->size()).adjusted(8, 8, -8, -8);
-            if (height() - 2 * kShadow <= win.height() && width() - 2 * kShadow <= win.width())
-                avail = avail.intersected(win);
-        }
+    if (const QRect avail = allowedArea(globalPos); !avail.isEmpty()) {
         pos.setX(qBound(avail.left() - kShadow, pos.x(), avail.right() - width() + kShadow));
         if (pos.y() + height() > avail.bottom() + kShadow) {
             // Flip above the anchor; if there's no room there either, rise

@@ -28,8 +28,11 @@ protected:
     void paintEvent(QPaintEvent *) override;
     void keyPressEvent(QKeyEvent *) override;
     void hideEvent(QHideEvent *) override;
+    void resizeEvent(QResizeEvent *) override;
 
 private:
+    // Where the card may go: the screen, and the window when it fits.
+    QRect allowedArea(const QPoint &globalPos) const;
     QWidget *m_content;
 };
 
