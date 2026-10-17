@@ -162,6 +162,10 @@ private:
 
     // structure (all within one container: the root or one table cell)
     int subtreeEnd(const QTextBlock &block) const; // last block number of block's children
+    // An open toggle with nothing inside shows "Empty toggle…" below it.
+    bool showsEmptyToggleHint(const QTextBlock &block) const;
+    QRectF emptyToggleHintRect(const QTextBlock &block) const; // viewport coordinates
+    double emptyToggleHintHeight() const { return qRound(m_ctx.style.size * 1.5 + 4 * m_ctx.style.size / 16.0); }
     QPair<int, int> selectedBlockRange() const;
     QPair<int, int> withChildren(QPair<int, int> range) const;
     int numberFor(const QTextBlock &block) const;  // numbered list position
@@ -253,7 +257,7 @@ private:
     // hit testing
     enum class Hit {
         None, Checkbox, ToggleArrow, Handle, Plus, CalloutIcon, CodeLanguage, CodeCopy, PageLink, Mention, Link, ImageEdge,
-        ColumnGap, TableAddRow, TableAddColumn, Object, InlineEquation, Date, CommentBubble
+        ColumnGap, TableAddRow, TableAddColumn, Object, InlineEquation, Date, CommentBubble, ToggleHint
     };
     struct HitInfo {
         Hit hit = Hit::None;

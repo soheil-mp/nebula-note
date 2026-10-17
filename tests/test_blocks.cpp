@@ -9,6 +9,7 @@
 #include <QImage>
 #include <QPainter>
 
+#include <QAbstractTextDocumentLayout>
 #include <QApplication>
 #include <QClipboard>
 #include <QMimeData>
@@ -769,6 +770,30 @@ private slots:
         m_ed->insertFromMimeData(&mime);
         QCOMPARE(saved().first().spans.first().mention, target);
         QCOMPARE(saved().first().spans.first().mentionBlock, blockId);
+    }
+
+    void emptyToggleOffersAFirstChild()
+    {
+        Block toggle = Block::make(BlockType::Toggle, QStringLiteral("Details"));
+        fresh({toggle});
+        QTest::qWait(50);
+        QVERIFY(block(0).blockFormat().bottomMargin() > 10); // room for the hint
+        // …which counts in the editor's height even as the last block.
+        const QRectF last = m_ed->document()->documentLayout()->blockBoundingRect(block(0));
+        QVERIFY(m_ed->preferredHeight() >= last.bottom() + block(0).blockFormat().bottomMargin());
+        // A click on the hint starts a child inside.
+        const QTextBlock t = block(0);
+        const QRectF r = m_ed->document()->documentLayout()->blockBoundingRect(t);
+        const QPoint at(int(r.left()) + 60, int(r.bottom()) + 10);
+        QTest::mouseClick(m_ed->viewport(), Qt::LeftButton, {}, at);
+        settle();
+        type(QStringLiteral("inside"));
+        QTest::qWait(50);
+        const QList<Block> out = saved();
+        QCOMPARE(out.size(), 2);
+        QCOMPARE(out[1].depth, 1);
+        QCOMPARE(out[1].plainText(), QStringLiteral("inside"));
+        QCOMPARE(block(0).blockFormat().bottomMargin(), 0.0); // the hint is gone
     }
 
     void mermaidKeepsRoomAfterResize()

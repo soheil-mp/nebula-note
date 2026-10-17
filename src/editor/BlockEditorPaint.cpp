@@ -388,6 +388,19 @@ void BlockEditor::paintEvent(QPaintEvent *e)
         }
     }
 
+    // "Empty toggle" under open toggles with nothing inside.
+    for (const QTextBlock &b : visible) {
+        const QRectF hint = emptyToggleHintRect(b);
+        if (hint.isEmpty())
+            continue;
+        const bool hover = m_hoverHit == Hit::ToggleHint && m_hoverBlock == b.blockNumber();
+        QFont f = Theme::uiFont(m_ctx.style.size);
+        f.setFamily(m_ctx.style.family);
+        p.setFont(f);
+        p.setPen(hover ? c.fog : c.dust);
+        p.drawText(hint, Qt::AlignVCenter | Qt::AlignLeft, tr("Empty toggle. Click or drop blocks inside."));
+    }
+
     // The selection box being dragged in the margin.
     if (m_bandSelecting) {
         const QRectF band = QRectF(m_bandStart, m_bandEnd).normalized();

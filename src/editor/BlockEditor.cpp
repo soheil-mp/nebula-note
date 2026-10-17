@@ -342,7 +342,16 @@ bool BlockEditor::isEmptyPage() const
 
 int BlockEditor::preferredHeight() const
 {
-    return qCeil(document()->documentLayout()->documentSize().height()) + 2;
+    // Qt leaves the last block's bottom margin out of the document's size;
+    // that margin holds Mermaid previews and "Empty toggle", so count it.
+    QTextDocument *doc = document();
+    double h = doc->documentLayout()->documentSize().height();
+    const QTextBlock last = doc->lastBlock();
+    if (last.isValid() && last.isVisible() && last.blockFormat().bottomMargin() > 0) {
+        const QRectF r = doc->documentLayout()->blockBoundingRect(last);
+        h = qMax(h, r.bottom() + last.blockFormat().bottomMargin() + doc->rootFrame()->frameFormat().bottomMargin());
+    }
+    return qCeil(h) + 2;
 }
 
 void BlockEditor::updateHeight()

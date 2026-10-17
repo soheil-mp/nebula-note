@@ -92,6 +92,12 @@ BlockEditor::HitInfo BlockEditor::hitTest(const QPoint &pos) const
     const double left = blockLeft(blk);
     const QRectF br = blockRect(blk);
 
+    // The "Empty toggle" line: a click starts the toggle's first child.
+    if (const QRectF hint = emptyToggleHintRect(blk); !hint.isEmpty() && hint.contains(pos)) {
+        h.hit = Hit::ToggleHint;
+        return h;
+    }
+
     // The comment bubble at the right edge.
     if (m_openComments.value(idOf(blk)) > 0 && commentBubbleRect(blk).adjusted(-4, -4, 4, 4).contains(pos)) {
         h.hit = Hit::CommentBubble;
@@ -290,6 +296,13 @@ void BlockEditor::mousePressEvent(QMouseEvent *e)
             child.depth = depthOf(blk) + 1;
             insertNewBlockAfter(blk, child);
         }
+        return;
+    }
+    case Hit::ToggleHint: {
+        Block child;
+        child.depth = depthOf(blk) + 1;
+        insertNewBlockAfter(blk, child);
+        setFocus();
         return;
     }
     case Hit::Plus: {
@@ -581,6 +594,7 @@ void BlockEditor::mouseMoveEvent(QMouseEvent *e)
         case Hit::InlineEquation:
         case Hit::Date:
         case Hit::CommentBubble:
+        case Hit::ToggleHint:
             shape = Qt::PointingHandCursor;
             break;
         case Hit::Object: {

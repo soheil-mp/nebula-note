@@ -292,6 +292,8 @@ void BlockEditor::normalize()
                 const Mermaid::Info info = Mermaid::measure(src, 13 * k, width - 32 * k);
                 if (info.supported)
                     bottom = info.size.height() + 84 * k;
+            } else if (showsEmptyToggleHint(blk)) {
+                bottom = emptyToggleHintHeight();
             }
             if (qAbs(bf.topMargin() - top) > 0.5 || qAbs(bf.leftMargin() - left) > 0.5 || qAbs(bf.rightMargin() - right) > 0.5
                 || qAbs(bf.bottomMargin() - bottom) > 0.5) {
@@ -444,6 +446,9 @@ void BlockEditor::normalize()
     c.endEditBlock();
     m_loading = wasLoading;
     updateVisibility();
+    // A last block's bottom margin doesn't change the document's size.
+    if (!fixes.isEmpty())
+        updateHeight();
     // Margins of neighbours may have changed with the splits.
     if (std::any_of(fixes.begin(), fixes.end(), [](const Fix &f) { return f.kind == Fix::Split || f.kind == Fix::ToParagraph; }))
         scheduleNormalize();
@@ -645,6 +650,26 @@ int BlockEditor::itemDepth(const QTextBlock &first) const
     if (QTextTable *t = DocumentIO::wholeTableAt(first, INT_MAX))
         return tableDepth(t);
     return depthOf(first);
+}
+
+bool BlockEditor::showsEmptyToggleHint(const QTextBlock &block) const
+{
+    return !isReadOnly() && block.isVisible() && foldsChildren(block) && !isCollapsed(block) && subtreeEnd(block) == block.blockNumber();
+}
+
+QRectF BlockEditor::emptyToggleHintRect(const QTextBlock &block) const
+{
+    if (!showsEmptyToggleHint(block))
+        return {};
+    const QRectF r = blockRect(block);
+    const QTextLayout *layout = block.layout();
+    double textBottom = r.top() + m_ctx.style.size * 1.5;
+    if (layout && layout->lineCount() > 0) {
+        const QTextLine last = layout->lineAt(layout->lineCount() - 1);
+        textBottom = r.top() + last.y() + last.height();
+    }
+    const double left = textLeft(block);
+    return QRectF(left, textBottom, qMax(80.0, blockRight(block) - left), emptyToggleHintHeight());
 }
 
 int BlockEditor::subtreeEnd(const QTextBlock &block) const
