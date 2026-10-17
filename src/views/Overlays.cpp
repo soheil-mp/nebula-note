@@ -175,6 +175,8 @@ public:
     }
     QString current() const { return m_current >= 0 ? m_items[m_current].id : QString(); }
     QList<Item> items() const { return m_items; }
+    // What was typed: it shows bold in page titles.
+    void setQuery(const QString &query) { m_query = query.trimmed(); }
 
 signals:
     void activated(const QString &id);
@@ -228,8 +230,26 @@ protected:
             p.setFont(Theme::uiFont(14, QFont::Medium));
             p.setPen(r.item == m_current ? c.starlight : c.moon);
             const double x = iconRect.right() + 12;
-            p.drawText(QRectF(x, row.top() + (it.sub.isEmpty() ? 0 : 6), right - x, it.sub.isEmpty() ? row.height() : 22), Qt::AlignVCenter,
-                       QFontMetricsF(p.font()).elidedText(it.title, Qt::ElideRight, right - x));
+            const QRectF titleRect(x, row.top() + (it.sub.isEmpty() ? 0 : 6), right - x, it.sub.isEmpty() ? row.height() : 22);
+            const QString shown = QFontMetricsF(p.font()).elidedText(it.title, Qt::ElideRight, right - x);
+            const int at = m_query.isEmpty() || !it.id.startsWith(QLatin1String("page:")) ? -1 : shown.indexOf(m_query, 0, Qt::CaseInsensitive);
+            if (at < 0) {
+                p.drawText(titleRect, Qt::AlignVCenter, shown);
+            } else {
+                // Before, the match (brighter and bolder), after.
+                const QFont regular = Theme::uiFont(14, QFont::Medium), bold = Theme::uiFont(14, QFont::Bold);
+                double tx = titleRect.left();
+                const QList<QPair<QString, bool>> parts = {{shown.left(at), false}, {shown.mid(at, m_query.size()), true},
+                                                           {shown.mid(at + m_query.size()), false}};
+                for (const auto &[text, hit] : parts) {
+                    if (text.isEmpty())
+                        continue;
+                    p.setFont(hit ? bold : regular);
+                    p.setPen(hit || r.item == m_current ? c.starlight : c.moon);
+                    p.drawText(QRectF(tx, titleRect.top(), titleRect.right() - tx, titleRect.height()), Qt::AlignVCenter, text);
+                    tx += QFontMetricsF(p.font()).horizontalAdvance(text);
+                }
+            }
             if (!it.sub.isEmpty()) {
                 p.setFont(Theme::uiFont(12));
                 p.setPen(c.fog);
@@ -266,6 +286,7 @@ protected:
 private:
     QList<Item> m_items;
     QList<Row> m_rows;
+    QString m_query;
     int m_current = -1;
 };
 
@@ -537,6 +558,7 @@ void QuickFind::refresh()
         items.append({QStringLiteral("action:") + QString::fromLatin1(a.id), QString::fromLatin1(a.icon), false, title, QString(),
                       tr("Actions"), QString::fromLatin1(a.hint)});
     }
+    m_list->setQuery(m_field->text());
     m_list->setItems(items);
 }
 

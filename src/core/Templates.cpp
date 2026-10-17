@@ -101,7 +101,8 @@ Schema taskSchema()
     estimate.description = tr("Working days the task should take.");
     Property left = prop(QStringLiteral("left"), tr("Days left"), PropType::Formula);
     left.formula = QStringLiteral("if(prop(\"Status\") == \"Done\", \"Done\", if(empty(prop(\"Due\")), \"\", "
-                                  "format(dateBetween(dateEnd(prop(\"Due\")), now(), \"days\")) + \" days\"))");
+                                  "let(d, dateBetween(dateEnd(prop(\"Due\")), now(), \"days\"), "
+                                  "if(d < 0, \"Overdue\", if(d == 0, \"Due today\", if(d == 1, \"1 day\", format(d) + \" days\"))))))");
     left.formulaType = QStringLiteral("text");
     s.props += {estimate, left};
     View board = Schema::makeView(s, ViewType::Board, tr("Board"));
