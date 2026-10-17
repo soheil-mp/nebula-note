@@ -65,6 +65,7 @@ signals:
 protected:
     void resizeEvent(QResizeEvent *e) override;
     void paintEvent(QPaintEvent *e) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void relayout();

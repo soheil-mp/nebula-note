@@ -105,6 +105,9 @@ DatabaseBody::DatabaseBody(QWidget *parent, bool inlineMode)
     m_hscroll->setFrameStyle(QFrame::NoFrame);
     m_hscroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_hscroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    // The sideways scrollbar shows itself while the pointer is over the view.
+    m_hscroll->horizontalScrollBar()->setStyleSheet(QStringLiteral("QScrollBar::handle:horizontal { background: transparent; }"));
+    m_hscroll->installEventFilter(this);
     m_hscroll->setWidgetResizable(false);
     m_hscroll->viewport()->setAutoFillBackground(false);
     m_hcontent = new QWidget;
@@ -712,6 +715,15 @@ void DatabaseBody::relayout()
     update();
     if (old != y)
         emit heightChanged();
+}
+
+bool DatabaseBody::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_hscroll && (event->type() == QEvent::Enter || event->type() == QEvent::Leave)) {
+        m_hscroll->horizontalScrollBar()->setStyleSheet(
+            event->type() == QEvent::Enter ? QString() : QStringLiteral("QScrollBar::handle:horizontal { background: transparent; }"));
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void DatabaseBody::resizeEvent(QResizeEvent *)
