@@ -205,7 +205,7 @@ void apply(Workspace &ws, const QString &templateId, const QString &pageId)
                        {QStringLiteral("people")}));
         } else if (templateId == QLatin1String("journal")) {
             setPage(longDate(today), QStringLiteral("moon"),
-                    md(QStringLiteral("### %1\n\n- \n- \n- \n\n### %2\n\n- [ ] \n- [ ] \n\n### %3\n\n<details>\n<summary>%4</summary>\n\n\n</details>\n\n"
+                    md(QStringLiteral("### %1\n\n- \n- \n- \n\n### %2\n\n- [ ] \n- [ ] \n\n### %3\n\n<details>\n<summary>%4</summary>\n\n- \n\n</details>\n\n"
                                       "> %5")
                            .arg(tr("Three things I'm grateful for"), tr("Focus for today"), tr("Reflection"), tr("What went well, what to change"),
                                 tr("We are made of star-stuff. — Carl Sagan"))));

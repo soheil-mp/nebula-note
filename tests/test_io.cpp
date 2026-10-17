@@ -226,6 +226,18 @@ private slots:
         QVERIFY(plain(b[0].spans).startsWith(QStringLiteral("It costs $5 and $6 today")));
     }
 
+    void markdownBareMarkersAreEmptyItems()
+    {
+        // Templates start lists with bare markers; a lone "-" mid-paragraph stays text.
+        const QList<Block> b = Markdown::toBlocks(QStringLiteral("- \n- \n\n1. \n\nSome text\n-\n"));
+        QCOMPARE(b.size(), 4);
+        QCOMPARE(b[0].type, BlockType::Bullet);
+        QCOMPARE(b[1].type, BlockType::Bullet);
+        QVERIFY(b[0].plainText().isEmpty());
+        QCOMPARE(b[2].type, BlockType::Numbered);
+        QCOMPARE(b[3].type, BlockType::Paragraph);
+    }
+
     void markdownImageAltBecomesCaption()
     {
         Markdown::ImportOptions opt;

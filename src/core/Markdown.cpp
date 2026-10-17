@@ -1043,8 +1043,12 @@ private:
 
         // Lists.
         static const QRegularExpression todo(QStringLiteral("^[-*+]\\s+\\[([ xX])\\]\\s?(.*)$"));
-        static const QRegularExpression bullet(QStringLiteral("^[-*+]\\s+(.*)$"));
-        static const QRegularExpression numbered(QStringLiteral("^\\d{1,9}[.)]\\s+(.*)$"));
+        // A bare marker is an empty item (templates start lists that way),
+        // though, as in CommonMark, not in the middle of a paragraph.
+        static const QRegularExpression bullet(QStringLiteral("^[-*+](?:\\s+(.*))?$"));
+        static const QRegularExpression numbered(QStringLiteral("^\\d{1,9}[.)](?:\\s+(.*))?$"));
+        const bool bareMarker = line.size() <= 10 && !line.contains(QLatin1Char(' '));
+        const bool emptyItemAllowed = m_para.isEmpty();
         if (auto m = todo.match(line); m.hasMatch()) {
             flushParagraph();
             Block b;
@@ -1056,7 +1060,7 @@ private:
             ++m_pos;
             return;
         }
-        if (auto m = bullet.match(line); m.hasMatch()) {
+        if (auto m = bullet.match(line); m.hasMatch() && (!bareMarker || emptyItemAllowed)) {
             flushParagraph();
             Block b;
             b.type = BlockType::Bullet;
@@ -1066,7 +1070,7 @@ private:
             ++m_pos;
             return;
         }
-        if (auto m = numbered.match(line); m.hasMatch()) {
+        if (auto m = numbered.match(line); m.hasMatch() && (!bareMarker || emptyItemAllowed)) {
             flushParagraph();
             Block b;
             b.type = BlockType::Numbered;
