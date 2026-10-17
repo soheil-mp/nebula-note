@@ -360,6 +360,15 @@ QTextTableFormat tableFormat(const Block &b, const Style &style, const QTextTabl
     return tf;
 }
 
+namespace
+{
+double columnTopPadding(const QTextTableCell &cell, const Style &style)
+{
+    const QTextBlock first = cell.firstCursorPosition().block();
+    return first.isValid() ? padTop(typeOf(first), style) : 0;
+}
+} // namespace
+
 void formatCells(QTextTable *t, const Style &style)
 {
     const QJsonObject data = QJsonDocument::fromJson(t->format().property(DataProp).toString().toUtf8()).object();
@@ -375,7 +384,9 @@ void formatCells(QTextTable *t, const Style &style)
             if (columns) {
                 cf.setLeftPadding(c == 0 ? 0 : half);
                 cf.setRightPadding(c == t->columns() - 1 ? 0 : half);
-                cf.setTopPadding(0);
+                // Qt drops a cell's first top margin: a box opening the
+                // column (callout, code) gets its room from the padding.
+                cf.setTopPadding(columnTopPadding(cell, style));
                 cf.setBottomPadding(0);
                 cf.clearBackground();
             } else {
@@ -411,7 +422,8 @@ bool cellsNeedFormat(const QTextTable *t, const Style &style)
         for (int c = 0; c < t->columns(); ++c) {
             const QTextTableCellFormat cf = t->cellAt(r, c).format().toTableCellFormat();
             if (columns) {
-                if (qAbs(cf.leftPadding() - (c == 0 ? 0 : half)) > 0.5 || qAbs(cf.rightPadding() - (c == t->columns() - 1 ? 0 : half)) > 0.5)
+                if (qAbs(cf.leftPadding() - (c == 0 ? 0 : half)) > 0.5 || qAbs(cf.rightPadding() - (c == t->columns() - 1 ? 0 : half)) > 0.5
+                    || qAbs(cf.topPadding() - columnTopPadding(t->cellAt(r, c), style)) > 0.5)
                     return true;
                 continue;
             }

@@ -226,6 +226,20 @@ private slots:
         QVERIFY(plain(b[0].spans).startsWith(QStringLiteral("It costs $5 and $6 today")));
     }
 
+    void markdownImageAltBecomesCaption()
+    {
+        Markdown::ImportOptions opt;
+        opt.importImage = [](const QString &src) { return src.section(QLatin1Char('/'), -1); };
+        const QList<Block> b = Markdown::toBlocks(QStringLiteral("![The Orion nebula](sky/orion.png)\n\n"
+                                                                 "![image.png](Page%20abc/image%201.png)\n\n"
+                                                                 "![orion](sky/orion.png)\n"),
+                                                  opt);
+        QCOMPARE(b.size(), 3);
+        QCOMPARE(plain(b[0].caption), QStringLiteral("The Orion nebula")); // describes the picture
+        QVERIFY(b[1].caption.isEmpty()); // a file name isn't a caption
+        QVERIFY(b[2].caption.isEmpty()); // nor the file's own stem
+    }
+
     void htmlImportCoversCommonMarkup()
     {
         const QString html = QStringLiteral(

@@ -789,6 +789,14 @@ private slots:
         fresh({para(QStringLiteral("Plain"))});
         QTest::qWait(30);
         QVERIFY(m_ed->document()->rootFrame()->frameFormat().topMargin() < 4);
+        // Nor does a column, unless it opens with a box.
+        Block callout = Block::make(BlockType::Callout, QStringLiteral("Note"));
+        fresh({para(QStringLiteral("Intro")), columns({{callout}, {para(QStringLiteral("Right"))}})});
+        QTest::qWait(30);
+        QCOMPARE(tables().size(), 1);
+        QTextTable *t = tables().first();
+        QCOMPARE(t->cellAt(0, 0).format().toTableCellFormat().topPadding(), padTop(BlockType::Callout, m_ed->style()));
+        QCOMPARE(t->cellAt(0, 1).format().toTableCellFormat().topPadding(), 0.0);
     }
 
     void emptyToggleOffersAFirstChild()

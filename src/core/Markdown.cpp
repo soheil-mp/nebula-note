@@ -1123,11 +1123,14 @@ private:
                 b.depth = continuationDepth(indent);
                 b.media = media;
                 // Alt text that describes the picture becomes its caption;
-                // exporters that just repeat the file name don't count.
+                // a file name (what exporters like Notion's write) doesn't.
+                static const QRegularExpression fileName(QStringLiteral("\\.(png|jpe?g|gif|webp|svg|bmp|tiff?|heic|avif)$"),
+                                                         QRegularExpression::CaseInsensitiveOption);
                 const QString alt = decodeEntities(m.captured(1)).trimmed();
                 const QString file = QUrl::fromPercentEncoding(src.section(QLatin1Char('/'), -1).toUtf8());
                 const QString stem = file.section(QLatin1Char('.'), 0, -2);
-                if (!alt.isEmpty() && alt != file && alt != stem && alt.compare(QLatin1String("image"), Qt::CaseInsensitive) != 0)
+                if (!alt.isEmpty() && alt != file && alt != stem && !fileName.match(alt).hasMatch()
+                    && alt.compare(QLatin1String("image"), Qt::CaseInsensitive) != 0)
                     b.caption = normalizeSpans(parseInline(alt, m_opt));
                 addBlock(b);
             } else if (!m.captured(1).isEmpty()) {
