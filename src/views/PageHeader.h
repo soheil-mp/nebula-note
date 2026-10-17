@@ -18,6 +18,8 @@ public:
     QString title() const;
     void setPixelSize(double px);
     double pixelSize() const { return m_px; }
+    // The page font ("" for the display face).
+    void setFamily(const QString &family);
     void setPlaceholder(const QString &text) { m_placeholder = text; }
     void focusEnd();
     int preferredHeight() const;
@@ -41,6 +43,7 @@ private:
     void updateHeight();
     QString m_placeholder;
     double m_px = 40;
+    QString m_family;
     bool m_setting = false;
     int m_lastHeight = -1;
 };
@@ -94,6 +97,7 @@ public:
     void flushTitle(); // saves a pending title edit now
     void setColumn(int x, int width);
     void setSmall(bool small);
+    void setTitleFamily(const QString &family);
     void setEditable(bool editable);
     TitleEdit *title() const { return m_title; }
     void relayout();

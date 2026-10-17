@@ -233,6 +233,8 @@ void BlockEditor::reload()
 {
     m_loading = true;
     const int pos = textCursor().position();
+    // Reloading (a new font, small text) keeps the reader where they were.
+    const int scrolled = m_scrollArea ? m_scrollArea->verticalScrollBar()->value() : -1;
     QTextDocument *doc = document();
     doc->setUndoRedoEnabled(false);
     QList<Block> content = m_ws && !m_pageId.isEmpty() ? m_ws->content(m_pageId) : QList<Block>();
@@ -259,9 +261,13 @@ void BlockEditor::reload()
     m_highlighter->rehighlight();
     QTextCursor c(doc);
     c.setPosition(qBound(0, pos, doc->characterCount() - 1));
+    m_loading = true;
     setTextCursor(c);
+    m_loading = false;
     updateHeight();
     refreshComments();
+    if (scrolled >= 0)
+        m_scrollArea->verticalScrollBar()->setValue(scrolled);
 }
 
 void BlockEditor::flush()
@@ -368,6 +374,9 @@ void BlockEditor::wheelEvent(QWheelEvent *e)
 void BlockEditor::ensureCaretVisible()
 {
     if (!m_scrollArea || !hasFocus() || !m_scrollArea->widget())
+        return;
+    // While a page loads the caret runs through every block it inserts.
+    if (m_loading)
         return;
     const QRect r = cursorRect();
     const QPoint top = viewport()->mapTo(m_scrollArea->widget(), r.topLeft());

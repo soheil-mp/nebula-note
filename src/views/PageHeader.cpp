@@ -46,11 +46,23 @@ TitleEdit::TitleEdit(QWidget *parent)
     });
 }
 
+void TitleEdit::setFamily(const QString &family)
+{
+    if (family == m_family)
+        return;
+    m_family = family;
+    setPixelSize(m_px);
+}
+
 void TitleEdit::setPixelSize(double px)
 {
     m_px = px;
     QFont f = Theme::displayFont(px, QFont::Bold);
-    f.setLetterSpacing(QFont::PercentageSpacing, 99);
+    if (!m_family.isEmpty()) {
+        f.setFamily(m_family);
+        f.setWeight(QFont::Bold);
+    }
+    f.setLetterSpacing(QFont::PercentageSpacing, m_family.isEmpty() ? 99 : 100);
     setFont(f);
     document()->setDefaultFont(f);
     QTextCursor c(document());
@@ -486,6 +498,12 @@ void PageHeader::setColumn(int x, int width)
     m_colX = x;
     m_colW = width;
     updateTitleSize();
+    relayout();
+}
+
+void PageHeader::setTitleFamily(const QString &family)
+{
+    m_title->setFamily(family);
     relayout();
 }
 

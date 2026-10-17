@@ -543,12 +543,15 @@ void PageView::applyOptions()
         return;
     const PageOptions o = ws->options(m_pageId);
     m_header->setSmall(o.smallText);
+    // Serif and mono pages title themselves in that face too.
+    m_header->setTitleFamily(o.font == QLatin1String("serif") || o.font == QLatin1String("mono") ? Theme::pageFamily(o.font) : QString());
     m_header->setEditable(!o.locked);
     const BlockFormat::Style &s = m_editor->style();
     const bool changed = s.family != Theme::pageFamily(o.font) || (o.smallText != (s.size < 15.5 * Settings::instance().textScale / 100.0))
                          || m_editor->isReadOnly() != o.locked;
     if (changed)
         m_editor->setPageOptions(o);
+
     updateBacklinks(); // the backlinks option may have changed
     relayout();
 }
