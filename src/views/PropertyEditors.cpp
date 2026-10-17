@@ -598,11 +598,29 @@ public:
         if (m_type == PropType::Text) {
             m_multi = new QPlainTextEdit(text);
             m_multi->setFont(Theme::uiFont(13.5));
-            m_multi->setMinimumSize(qMax(300, minWidth), 90);
+            m_multi->setMinimumWidth(qMax(300, minWidth));
+            m_multi->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
             m_multi->setStyleSheet(QStringLiteral("QPlainTextEdit { background: #23232a; color: #c9c9d0; border: 1px solid #2e2e35; "
                                                   "border-radius: 7px; padding: 4px; }"));
             m_multi->installEventFilter(this);
             v->addWidget(m_multi);
+            // As tall as the text (two lines at least), up to a scrolling limit.
+            const auto fit = [this] {
+                const QFontMetricsF fm(m_multi->font());
+                const double textW = qMax(100.0, m_multi->viewport()->width() - 2 * m_multi->document()->documentMargin());
+                const double textH = fm.boundingRect(QRectF(0, 0, textW, 10000), Qt::TextWordWrap,
+                                                     m_multi->toPlainText().isEmpty() ? QStringLiteral("x") : m_multi->toPlainText() + QLatin1Char('x'))
+                                         .height();
+                const int h = qBound(int(fm.lineSpacing() * 2) + 18, int(textH) + 20, 220);
+                if (m_multi->height() != h) {
+                    m_multi->setFixedHeight(h);
+                    layout()->activate();
+                    content()->layout()->activate();
+                    resize(sizeHint());
+                }
+            };
+            connect(m_multi, &QPlainTextEdit::textChanged, this, fit);
+            QTimer::singleShot(0, this, fit);
             auto *hint = new QLabel(tr("Enter to save · Shift+Enter for a new line"));
             hint->setFont(Theme::uiFont(11));
             hint->setStyleSheet(QStringLiteral("color: #6b6b75; padding: 2px 4px;"));
@@ -710,7 +728,7 @@ public:
         scroll->setWidgetResizable(true);
         scroll->setFrameStyle(QFrame::NoFrame);
         scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        scroll->setFixedHeight(280);
+        m_scroll = scroll;
         m_list = new QWidget;
         m_listLayout = new QVBoxLayout(m_list);
         m_listLayout->setContentsMargins(0, 0, 0, 0);
@@ -802,11 +820,21 @@ private:
             });
             m_listLayout->addWidget(create);
         }
+        if (m_listLayout->isEmpty()) {
+            auto *none = new QLabel(tr("No pages match"));
+            none->setFont(Theme::uiFont(13));
+            none->setStyleSheet(QStringLiteral("color: #6b6b75; padding: 6px 8px;"));
+            m_listLayout->addWidget(none);
+        }
         m_listLayout->addStretch();
+        // As tall as the list, up to a scrolling limit.
+        m_scroll->setFixedHeight(qMin(300, m_listLayout->sizeHint().height() + 2));
+        adjustSize();
     }
     QString m_db, m_row, m_propId, m_firstId;
     QLabel *m_title;
     QLineEdit *m_search;
+    QScrollArea *m_scroll;
     QWidget *m_list;
     QVBoxLayout *m_listLayout;
 };

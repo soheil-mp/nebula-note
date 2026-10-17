@@ -38,7 +38,8 @@ void Popover::popupAt(const QPoint &globalPos)
         QRect avail = screen->availableGeometry();
         // Stay inside the window when the card fits in it, as Notion's do.
         if (QWidget *host = parentWidget() ? parentWidget()->window() : nullptr) {
-            const QRect win(host->mapToGlobal(QPoint(0, 0)), host->size());
+            // …with a little air between card and window edge.
+            const QRect win = QRect(host->mapToGlobal(QPoint(0, 0)), host->size()).adjusted(8, 8, -8, -8);
             if (height() - 2 * kShadow <= win.height() && width() - 2 * kShadow <= win.width())
                 avail = avail.intersected(win);
         }

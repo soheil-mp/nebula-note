@@ -489,6 +489,7 @@ PagePicker::PagePicker(QWidget *parent, const QString &title, const QString &exc
     scroll->setFrameStyle(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->setFixedHeight(300);
+    scroll->setObjectName(QStringLiteral("pagePickerScroll"));
     m_list = new PageList(scroll);
     scroll->setWidget(m_list);
     m_list->setAutoFillBackground(false);
@@ -556,6 +557,11 @@ void PagePicker::refresh()
         rows.append({m->id, m->icon, ws->title(m->id), path.join(QStringLiteral(" / ")), m->isDatabase()});
     }
     m_list->setRows(rows);
+    // Short lists don't leave a gap under them.
+    if (auto *scroll = findChild<QScrollArea *>(QStringLiteral("pagePickerScroll"))) {
+        scroll->setFixedHeight(qMin(300, m_list->height()));
+        adjustSize();
+    }
 }
 
 #include "Pickers.moc"
