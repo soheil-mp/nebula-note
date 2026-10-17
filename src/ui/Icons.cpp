@@ -208,7 +208,7 @@ const QHash<QString, const char *> &bodies()
         {QStringLiteral("wallet"), R"svg(<path d="M4 7.5a2 2 0 0 1 2-2h11.5v3M4 7.5v10a2 2 0 0 0 2 2h14v-11H6a2 2 0 0 1-2-1z"/><circle cx="16.5" cy="14" r="1.2" fill="currentColor" stroke="none"/>)svg"},
         {QStringLiteral("cart"), R"svg(<path d="M3.5 4.5h2.5l2 10.5h10l2-7.5H7"/><circle cx="9.5" cy="19" r="1.4"/><circle cx="16.5" cy="19" r="1.4"/>)svg"},
         {QStringLiteral("dumbbell"), R"svg(<path d="M6.5 7.5v9M4 9.5v5M17.5 7.5v9M20 9.5v5M6.5 12h11"/>)svg"},
-        {QStringLiteral("plant"), R"svg(<path d="M12 20.5V11M12 11c0-3.5-2.5-6-6.5-6 0 3.5 2.5 6 6.5 6zm0 2c0-3 2.2-5.5 6-5.5 0 3-2.2 5.5-6 5.5zM7.5 20.5h9"/>)svg"},
+        {QStringLiteral("plant"), R"svg(<path d="M7.5 15h9l-1.3 5.5H8.8zM12 15V10.5M12 12.5c0-3.3-2.3-5.7-6-5.7 0 3.3 2.3 5.7 6 5.7zM12 10.5c0-3.1 2.2-5.5 5.8-5.5 0 3.1-2.2 5.5-5.8 5.5z"/>)svg"},
         {QStringLiteral("hourglass"), R"svg(<path d="M6.5 3.5h11M6.5 20.5h11M7.5 3.5c0 4.5 4.5 5.5 4.5 8.5S7.5 16 7.5 20.5M16.5 3.5c0 4.5-4.5 5.5-4.5 8.5s4.5 4 4.5 8.5"/>)svg"},
         {QStringLiteral("puzzle"), R"svg(<path d="M5 7.5h3.5a2 2 0 1 1 4 0H16v3.5a2 2 0 1 1 0 4V18.5h-3.5a2 2 0 1 0-4 0H5V15a2 2 0 1 0 0-4z"/>)svg"},
     };
