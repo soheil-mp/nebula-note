@@ -62,7 +62,9 @@ protected:
                 p.setBrush(c.graphite);
                 p.drawRoundedRect(cell.rect, 7, 7);
             }
-            Icons::paintPageIcon(p, cell.rect.adjusted(8, 8, -8, -8), cell.icon, i == m_hover ? c.starlight : c.moon);
+            // Emoji carry their own padding: give them a bigger box than line glyphs.
+            const double inset = cell.icon.startsWith(QLatin1String("glyph:")) ? 9 : 6;
+            Icons::paintPageIcon(p, cell.rect.adjusted(inset, inset, -inset, -inset), cell.icon, i == m_hover ? c.starlight : c.moon);
         }
     }
     void mouseMoveEvent(QMouseEvent *e) override

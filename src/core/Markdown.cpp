@@ -1122,6 +1122,13 @@ private:
                 b.type = BlockType::Image;
                 b.depth = continuationDepth(indent);
                 b.media = media;
+                // Alt text that describes the picture becomes its caption;
+                // exporters that just repeat the file name don't count.
+                const QString alt = decodeEntities(m.captured(1)).trimmed();
+                const QString file = QUrl::fromPercentEncoding(src.section(QLatin1Char('/'), -1).toUtf8());
+                const QString stem = file.section(QLatin1Char('.'), 0, -2);
+                if (!alt.isEmpty() && alt != file && alt != stem && alt.compare(QLatin1String("image"), Qt::CaseInsensitive) != 0)
+                    b.caption = normalizeSpans(parseInline(alt, m_opt));
                 addBlock(b);
             } else if (!m.captured(1).isEmpty()) {
                 addBlock(Block::make(BlockType::Paragraph, m.captured(1), continuationDepth(indent)));

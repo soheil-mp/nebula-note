@@ -95,7 +95,7 @@ signals:
     void homeRequested();
     void templatesRequested();
     void inboxRequested(const QPoint &globalPos);
-    void importRequested();
+    void importRequested(const QPoint &globalPos);
     void settingsRequested();
     void trashRequested(const QPoint &globalPos);
     void collapseRequested();

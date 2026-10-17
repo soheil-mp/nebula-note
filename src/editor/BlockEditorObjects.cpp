@@ -552,6 +552,14 @@ QTextBlock BlockEditor::blockById(const QString &id) const
     return {};
 }
 
+double BlockEditor::blockTop(int blockNumber) const
+{
+    const QTextBlock blk = document()->findBlockByNumber(blockNumber);
+    if (!blk.isValid() || !blk.isVisible())
+        return -1;
+    return blockRect(blk).top() + viewport()->y();
+}
+
 void BlockEditor::scrollToBlock(int blockNumber, bool flash)
 {
     QTextBlock blk = document()->findBlockByNumber(blockNumber);

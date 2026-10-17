@@ -71,7 +71,8 @@ private:
     void openTemplates(const QString &targetPage = {});
     // The card's bottom-left lands at `globalPos` (or its top-left).
     void openTrash(const QPoint &globalPos, bool growUp = true);
-    void importFiles(const QString &parentId = {});
+    // Asks what to import, with the menu at `globalPos` (or the cursor).
+    void importFiles(const QString &parentId = {}, const QPoint &globalPos = {});
     void exportPage(const QString &pageId, const QString &format);
     void exportAll();
     void showPageMenu(const QString &pageId, const QPoint &globalPos, bool fromSidebar);

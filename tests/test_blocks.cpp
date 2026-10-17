@@ -771,6 +771,27 @@ private slots:
         QCOMPARE(saved().first().spans.first().mentionBlock, blockId);
     }
 
+    void mermaidKeepsRoomAfterResize()
+    {
+        // A wide flowchart scales with the column; the space kept below the
+        // code block must follow, or the diagram covers the next block.
+        Block code = Block::make(BlockType::Code, QStringLiteral("graph LR") + QChar::LineSeparator
+                                                      + QStringLiteral("A[Dust cloud] --> B(Protostar) --> C{Mass?} --> |large| D((Supernova))"));
+        code.language = QStringLiteral("mermaid");
+        fresh({code, para(QStringLiteral("After"))});
+        const auto room = [&] { return block(0).blockFormat().bottomMargin(); };
+        QTest::qWait(150); // normalisation runs on a timer
+        const double wide = room();
+        QVERIFY2(wide > 80, qPrintable(QString::number(wide)));
+        m_ed->resize(420, 700);
+        QTest::qWait(150);
+        const double narrow = room();
+        QVERIFY2(narrow < wide, qPrintable(QStringLiteral("%1 vs %2").arg(narrow).arg(wide)));
+        m_ed->resize(900, 700);
+        QTest::qWait(150);
+        QCOMPARE(room(), wide);
+    }
+
     void syncedBlocksAndBlockLinks()
     {
         fresh({para("shared one"), para("shared two"), para("local")});

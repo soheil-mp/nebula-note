@@ -285,10 +285,13 @@ void BlockEditor::normalize()
             if (t == BlockType::Code && bf.property(LanguageProp).toString() == QLatin1String("mermaid")) {
                 QString src = blk.text();
                 src.replace(QChar::LineSeparator, QLatin1Char('\n'));
-                const double width = qMax(200.0, viewport()->width() - gutter() * 1.5 - left - right);
+                // The code box's width (text insets included), as the painter measures it.
+                const double boxLeft = left - blockLeftInset(t, s) - toggleRoom(blk, s);
+                const double boxRight = right - blockRightInset(t, s);
+                const double width = qMax(200.0, viewport()->width() - gutter() - rightMargin() - boxLeft - boxRight);
                 const Mermaid::Info info = Mermaid::measure(src, 13 * k, width - 32 * k);
                 if (info.supported)
-                    bottom = info.size.height() + 64 * k;
+                    bottom = info.size.height() + 84 * k;
             }
             if (qAbs(bf.topMargin() - top) > 0.5 || qAbs(bf.leftMargin() - left) > 0.5 || qAbs(bf.rightMargin() - right) > 0.5
                 || qAbs(bf.bottomMargin() - bottom) > 0.5) {

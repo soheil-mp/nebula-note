@@ -80,7 +80,7 @@ QList<double> BlockEditor::simpleTableWidths(const QTextTable *t) const
 {
     QList<double> out;
     const QList<QTextLength> lens = t->format().columnWidthConstraints();
-    const double avail = qMax(200.0, viewport()->width() - gutter() * 1.5);
+    const double avail = qMax(200.0, double(viewport()->width() - gutter() - rightMargin()));
     for (int c = 0; c < t->columns(); ++c) {
         const QTextLength l = c < lens.size() ? lens[c] : QTextLength();
         if (l.type() == QTextLength::PercentageLength)

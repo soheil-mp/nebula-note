@@ -53,6 +53,10 @@ public:
 
     // Width of the gutter left of the text column (drag handles live there).
     static int gutter() { return 58; }
+    // Top of a block in the editor's coordinates (-1 if hidden or gone).
+    double blockTop(int blockNumber) const;
+    // Room right of the text column, for comment badges.
+    static int rightMargin() { return 48; }
     int preferredHeight() const;
     void setScrollArea(QScrollArea *area) { m_scrollArea = area; }
     void setOverlayHost(QWidget *host);

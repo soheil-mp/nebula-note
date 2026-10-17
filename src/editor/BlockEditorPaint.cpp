@@ -464,11 +464,11 @@ void BlockEditor::paintEvent(QPaintEvent *e)
         const bool hover = m_hoverHit == Hit::CommentBubble && m_hoverBlock == b.blockNumber();
         p.setPen(Qt::NoPen);
         p.setBrush(hover ? QColor(0x3A, 0x3A, 0x44) : QColor(0x2A, 0x2A, 0x32));
-        p.drawRoundedRect(r, 5 * k, 5 * k);
-        Icons::paint(p, QRectF(r.left() + 3 * k, r.center().y() - 6 * k, 12 * k, 12 * k), QStringLiteral("comment"), c.mist);
-        p.setFont(Theme::uiFont(10.5 * k, QFont::DemiBold));
+        p.drawRoundedRect(r, 6 * k, 6 * k);
+        Icons::paint(p, QRectF(r.left() + 6 * k, r.center().y() - 6 * k, 12 * k, 12 * k), QStringLiteral("comment"), c.mist);
+        p.setFont(Theme::uiFont(11 * k, QFont::DemiBold));
         p.setPen(c.moon);
-        p.drawText(r.adjusted(14 * k, 0, -2 * k, 0), Qt::AlignCenter, QString::number(n));
+        p.drawText(r.adjusted(19 * k, 0, -5 * k, 0), Qt::AlignVCenter | Qt::AlignLeft, QString::number(n));
     }
 
     // + bars under and beside a hovered simple table.

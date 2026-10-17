@@ -13,7 +13,7 @@ It shares its look with [Umbra](../text), [Sidereus Docs](../docs),
 [Lunar](../lunar-slides): the palette is shades of gray from void `#09090B` to
 starlight `#F1F1F5`. Stars drift behind a translucent sidebar, page covers are
 procedural space scenes (nebulae, eclipses, ringed worlds, spiral galaxies,
-moonrises…), and Notion's colours become gray **shades**.
+moonrises…), and Notion's colors become gray **shades**.
 
 | | |
 |---|---|
@@ -59,16 +59,17 @@ Spell check uses Hunspell dictionaries when they are installed (`hunspell-en-us`
   `/2 columns` … `/5 columns`; drag the gap to resize. **Simple tables** with
   header row and column, Tab between cells, add rows/columns from the edges,
   cell shades, fit to width, and "turn into database".
-- **`/` command menu** organised like Notion's (basic blocks, media, database,
-  advanced, inline, colours, actions), with recent commands first; **`@`** for
+- **`/` command menu** organized like Notion's (basic blocks, media, database,
+  advanced, inline, colors, actions), with recent commands first; **`@`** for
   pages, dates ("tomorrow 3pm", "next friday", "remind me monday") and emoji; **`[[`** and **`+`** for page links and new sub-pages; **`:`** emoji
   autocomplete; `$$…$$` for inline math.
 - **Markdown as you type**, block selection with **Esc** (arrows, Shift+arrows,
   Delete, Ctrl+D, Ctrl+/ for the block menu), drag-and-drop with guides, the
-  `+` and `⋮⋮` handles, Turn into, Colour, Copy link to block, Move to, word
+  `+` and `⋮⋮` handles, Turn into, Color, Copy link to block, Move to, word
   count.
 - **Comments**: page discussions and comments on selected text (Ctrl+Shift+M),
-  threads, resolve and reopen. **Spell check** with suggestions.
+  threads, resolve and reopen. **Spell check** with suggestions (it can be
+  turned off in Settings).
 - **Pages**: icons (glyphs, emoji or your image), covers (generated scenes or
   your image), Default/Serif/Mono, small text, full width, lock, a table of
   contents in the margin, backlinks (expanded, in a popover or off), find in
@@ -90,7 +91,7 @@ Spell check uses Hunspell dictionaries when they are installed (`hunspell-en-us`
 - **Views**: **table** (resizable, reorderable, frozen and wrapped columns, a
   calculation footer, row drag, tick boxes for bulk edit/duplicate/delete),
   **board** (group by any property, sub-groups as swimlanes, folded and hidden
-  columns, coloured columns, card size and previews), **list**, **gallery**,
+  columns, colored columns, card size and previews), **list**, **gallery**,
   **calendar** (date ranges as spanning bars, weekends on or off, drag to move),
   **timeline** (day…year scales, drag bars and their ends, a table beside it,
   dependency arrows, unscheduled items), **chart** (vertical/horizontal bars,
@@ -156,7 +157,7 @@ previews you ask for. Edits save automatically; a copy is made once a day into
 | @, [[, + | Mention a page or date, link a page, new sub-page |
 | Esc | Select the block (arrows, Delete, Ctrl+D, Ctrl+/) |
 | Ctrl+B · I · U · E | Bold · italic · underline · inline code |
-| Ctrl+Shift+S · E · M · H | Strikethrough · equation · comment · last colour |
+| Ctrl+Shift+S · E · M · H | Strikethrough · equation · comment · last color |
 | Ctrl+Shift+0 … 9 or Ctrl+Alt+0 … 9 | Turn into text, H1–H3, to-do, bullets, numbers, toggle, code, page |
 | Tab / Shift+Tab | Nest / un-nest |
 | Ctrl+Shift+↑ / ↓ | Move the block |

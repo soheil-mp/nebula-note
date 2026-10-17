@@ -243,7 +243,6 @@ void BlockEditor::refreshComments()
 
 QRectF BlockEditor::commentBubbleRect(const QTextBlock &block) const
 {
-    const QRectF r = blockRect(block);
     const double k = m_ctx.style.size / 16.0;
-    return QRectF(viewport()->width() - 26 * k, firstLineMid(block) - 9 * k, 22 * k, 18 * k).translated(0, r.isValid() ? 0 : 0);
+    return QRectF(viewport()->width() - rightMargin() + 10, firstLineMid(block) - 10 * k, 32 * k, 20 * k);
 }

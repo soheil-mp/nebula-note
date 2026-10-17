@@ -802,7 +802,7 @@ void Sidebar::mousePressEvent(QMouseEvent *e)
         else if (id == QLatin1String("inbox"))
             emit inboxRequested(mapToGlobal(m_top[h].rect.topRight() + QPoint(8, 0)));
         else if (id == QLatin1String("import"))
-            emit importRequested();
+            emit importRequested(mapToGlobal(m_top[h].rect.topRight() + QPoint(8, 0)));
     } else if (h >= 100) {
         const QString id = m_bottom[h - 100].id;
         if (id == QLatin1String("settings"))

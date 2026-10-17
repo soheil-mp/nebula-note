@@ -116,7 +116,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_sidebar, &Sidebar::homeRequested, this, [this] { goHome(); });
     connect(m_sidebar, &Sidebar::templatesRequested, this, [this] { openTemplates(); });
     connect(m_sidebar, &Sidebar::inboxRequested, this, &MainWindow::openInbox);
-    connect(m_sidebar, &Sidebar::importRequested, this, [this] { importFiles(); });
+    connect(m_sidebar, &Sidebar::importRequested, this, [this](const QPoint &pos) { importFiles(QString(), pos); });
     connect(m_sidebar, &Sidebar::settingsRequested, this, &MainWindow::openSettings);
     connect(m_sidebar, &Sidebar::trashRequested, this, [this](const QPoint &pos) { openTrash(pos); });
     connect(m_sidebar, &Sidebar::collapseRequested, this, &MainWindow::toggleSidebar);
@@ -669,7 +669,7 @@ void MainWindow::openTrash(const QPoint &globalPos, bool growUp)
     t->popupAt(growUp ? globalPos - QPoint(0, t->height() - 2 * Popover::kShadow + 6) : globalPos);
 }
 
-void MainWindow::importFiles(const QString &parentId)
+void MainWindow::importFiles(const QString &parentId, const QPoint &globalPos)
 {
     QMenu *menu = Theme::makeMenu(this);
     Theme::addMenuSection(menu, tr("Import"));
@@ -724,7 +724,7 @@ void MainWindow::importFiles(const QString &parentId)
         if (!dir.isEmpty())
             run({dir});
     });
-    menu->popup(QCursor::pos());
+    menu->popup(globalPos.isNull() ? QCursor::pos() : globalPos);
 }
 
 void MainWindow::exportPage(const QString &pageId, const QString &format)

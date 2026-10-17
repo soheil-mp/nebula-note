@@ -240,7 +240,7 @@ void BlockEditor::reload()
     DocumentIO::load(doc, content, m_ctx.style);
     QTextFrameFormat ff = doc->rootFrame()->frameFormat();
     ff.setLeftMargin(gutter());
-    ff.setRightMargin(gutter() / 2);
+    ff.setRightMargin(rightMargin());
     ff.setTopMargin(2);
     ff.setBottomMargin(10);
     ff.setPadding(0);
@@ -354,6 +354,9 @@ void BlockEditor::resizeEvent(QResizeEvent *e)
     QTextEdit::resizeEvent(e);
     updateHeight();
     scheduleEmbeds();
+    // Space kept under Mermaid diagrams depends on the width.
+    if (e->size().width() != e->oldSize().width())
+        scheduleNormalize();
 }
 
 void BlockEditor::wheelEvent(QWheelEvent *e)

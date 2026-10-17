@@ -783,7 +783,7 @@ QWidget *SettingsPanel::shortcutsPage()
         {QStringLiteral("Ctrl+B · I · U · E"), tr("Bold · italic · underline · code")},
         {QStringLiteral("Ctrl+Shift+S"), tr("Strikethrough")},
         {QStringLiteral("Ctrl+K"), tr("Link the selection")},
-        {QStringLiteral("Ctrl+Shift+0 … 9"), tr("Turn into text, headings, to-do, lists, toggle, code, page")},
+        {QStringLiteral("Ctrl+Shift+0 … 9"), tr("Turn into text, a heading, a list, a to-do, code…")},
         {QStringLiteral("Tab / Shift+Tab"), tr("Nest / un-nest")},
         {QStringLiteral("Ctrl+Shift+↑ / ↓"), tr("Move block")},
         {QStringLiteral("Ctrl+D"), tr("Duplicate block")},
@@ -813,8 +813,9 @@ QWidget *SettingsPanel::shortcutsPage()
         auto *d = new QLabel(rows[i].second);
         d->setFont(Theme::uiFont(13.5));
         d->setStyleSheet(QStringLiteral("color: #a9a9b2;"));
-        grid->addWidget(k, i, 0, Qt::AlignLeft);
-        grid->addWidget(d, i, 1);
+        d->setWordWrap(true);
+        grid->addWidget(k, i, 0, Qt::AlignLeft | Qt::AlignTop);
+        grid->addWidget(d, i, 1, Qt::AlignVCenter);
     }
     grid->setColumnStretch(1, 1);
     auto *scroll = new QScrollArea;

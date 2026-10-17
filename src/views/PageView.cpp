@@ -175,8 +175,18 @@ public:
     void setEntries(const QList<TocEntry> &entries)
     {
         m_entries = entries;
+        m_current = qMin(m_current, int(entries.size()) - 1);
         relayoutSelf();
         update();
+    }
+    const QList<TocEntry> &entries() const { return m_entries; }
+    // The section being read: its line and row stand out.
+    void setCurrent(int index)
+    {
+        if (index != m_current) {
+            m_current = index;
+            update();
+        }
     }
     bool hasEntries() const { return m_entries.size() >= 2; }
     void relayoutSelf()
@@ -197,7 +207,7 @@ protected:
         if (!m_expanded) {
             for (int i = 0; i < m_entries.size(); ++i) {
                 const double w = 18 - (m_entries[i].level - minLevel) * 4;
-                p.setPen(QPen(c.dust, 2, Qt::SolidLine, Qt::RoundCap));
+                p.setPen(QPen(i == m_current ? c.mist : c.dust, 2, Qt::SolidLine, Qt::RoundCap));
                 p.drawLine(QPointF(width() - 8 - w, 8 + i * 9), QPointF(width() - 8, 8 + i * 9));
             }
             return;
@@ -211,7 +221,7 @@ protected:
             if (i == m_hover)
                 Theme::paintHover(p, r, 1.0, 6);
             const double indent = (m_entries[i].level - minLevel) * 14 + 8;
-            p.setPen(i == m_hover ? c.starlight : c.mist);
+            p.setPen(i == m_hover || i == m_current ? c.starlight : c.haze);
             p.drawText(r.adjusted(indent, 0, -6, 0), Qt::AlignVCenter, fm.elidedText(m_entries[i].text, Qt::ElideRight, r.width() - indent - 8));
         }
     }
@@ -253,6 +263,7 @@ private:
     QList<TocEntry> m_entries;
     bool m_expanded = false;
     int m_hover = -1;
+    int m_current = -1;
 };
 
 // ---- PageView -------------------------------------------------------------------------
@@ -278,6 +289,20 @@ PageView::PageView(QWidget *parent)
     m_outline->setObjectName(QStringLiteral("outlineRail"));
     m_outline->hide();
     m_outline->jump = [this](int block) { m_editor->scrollToBlock(block); };
+    connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this] {
+        // The last heading above the upper third of the view is where we are.
+        if (!m_outline->isVisible())
+            return;
+        const double line = verticalScrollBar()->value() + viewport()->height() / 3.0 - m_editor->y();
+        int current = -1;
+        const QList<TocEntry> &entries = m_outline->entries();
+        for (int i = 0; i < entries.size(); ++i) {
+            const double top = m_editor->blockTop(entries[i].block);
+            if (top >= 0 && top <= line)
+                current = i;
+        }
+        m_outline->setCurrent(current);
+    });
     m_editor->setScrollArea(this);
     m_backlinks = new Backlinks(m_canvas);
     m_backlinks->setObjectName(QStringLiteral("backlinks"));
@@ -613,7 +638,7 @@ void PageView::relayout()
         m_starter->setGeometry(x - 6, y + 6, colW, h);
         y += h + 14;
     }
-    m_editor->setGeometry(x - gutter, y, colW + gutter + gutter / 2, m_editor->height());
+    m_editor->setGeometry(x - gutter, y, colW + gutter + BlockEditor::rightMargin(), m_editor->height());
     y += m_editor->height();
     if (!m_backlinks->isHidden()) {
         m_backlinks->setGeometry(x, y + 28, colW, m_backlinks->height());
