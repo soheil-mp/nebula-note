@@ -9,6 +9,7 @@
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
 
+#include <QAbstractButton>
 #include <QApplication>
 #include <QClipboard>
 #include <QComboBox>
@@ -20,6 +21,7 @@
 #include <QLineEdit>
 #include <QLocale>
 #include <QMenu>
+#include <QPainter>
 #include <QScrollArea>
 #include <QVBoxLayout>
 
@@ -39,6 +41,61 @@ QComboBox *combo(int minWidth = 0)
         c->setMinimumWidth(minWidth);
     return c;
 }
+
+// A settings menu row: icon and label on the left, the current value in gray
+// on the right, and a chevron when it opens a page of its own.
+class MenuRow : public QAbstractButton
+{
+public:
+    MenuRow(const QString &icon, const QString &label, const QString &value, bool chevron)
+        : m_icon(icon)
+        , m_value(value)
+        , m_chevron(chevron)
+    {
+        setText(label);
+        setCursor(Qt::PointingHandCursor);
+        setAttribute(Qt::WA_Hover);
+        setMinimumWidth(300);
+    }
+    QSize sizeHint() const override { return {300, 30}; }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        const auto &c = Theme::colors();
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        const bool hot = underMouse() && isEnabled();
+        if (hot)
+            Theme::paintHover(p, QRectF(rect()), 1.0, 6);
+        const double textX = m_icon.isEmpty() ? 8 : 34;
+        if (!m_icon.isEmpty())
+            Icons::paint(p, QRectF(8, height() / 2.0 - 8, 16, 16), m_icon, hot ? c.starlight : c.mist);
+        double right = width() - 8;
+        if (m_chevron) {
+            Icons::paint(p, QRectF(right - 13, height() / 2.0 - 6.5, 13, 13), QStringLiteral("chevron-right"), c.fog);
+            right -= 19;
+        }
+        p.setFont(Theme::uiFont(13.5));
+        const QFontMetricsF fm(p.font());
+        double valueW = 0;
+        if (!m_value.isEmpty()) {
+            valueW = qMin(fm.horizontalAdvance(m_value), (right - textX) * 0.5);
+            p.setPen(c.fog);
+            p.drawText(QRectF(right - valueW, 0, valueW, height()), Qt::AlignVCenter | Qt::AlignRight,
+                       fm.elidedText(m_value, Qt::ElideRight, valueW));
+            valueW += 12;
+        }
+        p.setPen(isEnabled() ? (hot ? c.starlight : c.moon) : c.dust);
+        p.drawText(QRectF(textX, 0, right - valueW - textX, height()), Qt::AlignVCenter,
+                   fm.elidedText(text(), Qt::ElideRight, right - valueW - textX));
+    }
+
+private:
+    QString m_icon;
+    QString m_value;
+    bool m_chevron;
+};
 
 QLabel *caption(const QString &text)
 {
@@ -601,8 +658,8 @@ public:
         auto *inner = new QWidget;
         inner->setAutoFillBackground(false);
         m_layout = new QVBoxLayout(inner);
-        m_layout->setContentsMargins(12, 10, 12, 12);
-        m_layout->setSpacing(4);
+        m_layout->setContentsMargins(10, 10, 10, 10);
+        m_layout->setSpacing(2);
         m_scroll->setWidget(inner);
         outer->addWidget(m_scroll);
         rebuild();
@@ -634,31 +691,35 @@ private:
         QTimer::singleShot(0, this, [this] { rebuild(); });
     }
 
-    // A menu row: icon, label, value and a chevron; opens a page or runs `fn`.
-    FlatButton *row(const QString &icon, const QString &label, const QString &value, std::function<void()> fn)
+    // A menu row: icon, label and value; `chevron` when it opens a page.
+    MenuRow *row(const QString &icon, const QString &label, const QString &value, std::function<void()> fn, bool chevron = false)
     {
-        auto *b = new FlatButton(icon, value.isEmpty() ? label : QStringLiteral("%1   ·   %2").arg(label, value));
-        b->setTextSize(13.5);
-        b->setMinimumWidth(300);
+        auto *b = new MenuRow(icon, label, value, chevron);
         b->setObjectName(QStringLiteral("settingsRow"));
-        QObject::connect(b, &FlatButton::clicked, this, std::move(fn));
+        QObject::connect(b, &MenuRow::clicked, this, std::move(fn));
         m_layout->addWidget(b);
         return b;
     }
-    Switch *toggle(const QString &label, bool on, std::function<void(bool)> fn)
+    MenuRow *pageRow(const QString &icon, const QString &label, const QString &value, const QString &page)
     {
-        auto *h = new QHBoxLayout;
-        auto *l = new QLabel(label);
-        l->setFont(Theme::uiFont(13.5));
-        l->setStyleSheet(QStringLiteral("color: #c9c9d0;"));
-        auto *sw = new Switch;
+        return row(icon, label, value, [this, page] { openPage(page); }, true);
+    }
+    // A row with a switch on the right; clicking anywhere on it flips it.
+    Switch *toggle(const QString &icon, const QString &label, bool on, std::function<void(bool)> fn)
+    {
+        auto *r = new MenuRow(icon, label, QString(), false);
+        auto *sw = new Switch(r);
         sw->setChecked(on);
-        h->addWidget(l, 1);
-        h->addWidget(sw);
-        m_layout->addLayout(h);
+        auto *h = new QHBoxLayout(r);
+        h->setContentsMargins(0, 0, 8, 0);
+        h->addStretch();
+        h->addWidget(sw, 0, Qt::AlignVCenter);
+        QObject::connect(r, &MenuRow::clicked, sw, &Switch::click);
+        m_layout->addWidget(r);
         QObject::connect(sw, &Switch::toggled, this, std::move(fn));
         return sw;
     }
+    Switch *toggle(const QString &label, bool on, std::function<void(bool)> fn) { return toggle(QString(), label, on, std::move(fn)); }
     QComboBox *choice(const QString &label, const QList<QPair<QString, QString>> &items, const QString &current, std::function<void(const QString &)> fn)
     {
         m_layout->addWidget(caption(label));
@@ -711,13 +772,13 @@ private:
         m_layout->addSpacing(6);
         const bool locked = s.locked;
         if (!locked)
-            row(viewTypeIcon(v.type), tr("Layout"), viewTypeName(v.type), [this] { openPage(QStringLiteral("layout")); });
+            pageRow(viewTypeIcon(v.type), tr("Layout"), viewTypeName(v.type), QStringLiteral("layout"));
         int shown = 0;
         for (const Property *p : s.orderedProps(v))
             if (p->type != PropType::Title)
                 ++shown;
         if (!locked && v.type != ViewType::Chart)
-            row(QStringLiteral("list"), tr("Properties"), tr("%n shown", nullptr, shown), [this] { openPage(QStringLiteral("properties")); });
+            pageRow(QStringLiteral("list"), tr("Properties"), tr("%n shown", nullptr, shown), QStringLiteral("properties"));
         if (v.type != ViewType::Form) {
             row(QStringLiteral("filter"), tr("Filter"), v.filters.isEmpty() ? QString() : tr("%n rule(s)", nullptr, filterRuleCount(v.filters)), [this] {
                 const QPoint pos = mapToGlobal(QPoint(20, 40));
@@ -726,7 +787,7 @@ private:
                 if (body)
                     DbPopovers::showFilters(body->window(), pos, body->databaseId(), [body] { return body->currentView(); },
                                             [body](const std::function<void(View &)> &fn) { body->editView(fn); });
-            });
+            }, true);
             row(QStringLiteral("sort"), tr("Sort"), v.sorts.isEmpty() ? QString() : tr("%n sort(s)", nullptr, int(v.sorts.size())), [this] {
                 const QPoint pos = mapToGlobal(QPoint(20, 40));
                 DatabaseBody *body = m_body;
@@ -734,13 +795,13 @@ private:
                 if (body)
                     DbPopovers::showSorts(body->window(), pos, body->databaseId(), [body] { return body->currentView(); },
                                           [body](const std::function<void(View &)> &fn) { body->editView(fn); });
-            });
+            }, true);
         }
         const bool groupable = v.type == ViewType::Table || v.type == ViewType::Board || v.type == ViewType::List || v.type == ViewType::Gallery
                                || v.type == ViewType::Timeline;
         if (groupable && !locked) {
             const Property *g = s.prop(v.groupBy);
-            row(QStringLiteral("group"), tr("Group"), g ? g->name : tr("None"), [this] { openPage(QStringLiteral("group")); });
+            pageRow(QStringLiteral("group"), tr("Group"), g ? g->name : tr("None"), QStringLiteral("group"));
         }
         if ((v.type == ViewType::Table || v.type == ViewType::List || v.type == ViewType::Board) && !locked) {
             const QString mode = s.subItemsProp.isEmpty() ? tr("Off")
@@ -748,26 +809,26 @@ private:
                                  : v.subItems == QLatin1String("parents") ? tr("Parents only")
                                  : v.subItems == QLatin1String("off")     ? tr("Plain rows")
                                                                           : tr("Nested");
-            row(QStringLiteral("subitems"), tr("Sub-items"), mode, [this] { openPage(QStringLiteral("subitems")); });
+            pageRow(QStringLiteral("subitems"), tr("Sub-items"), mode, QStringLiteral("subitems"));
         }
         if (v.type == ViewType::Timeline && !locked)
-            toggle(tr("Dependencies"), !s.dependencyProp.isEmpty(), [this](bool on) {
+            toggle(QStringLiteral("dependency"), tr("Dependencies"), !s.dependencyProp.isEmpty(), [this](bool on) {
                 Workspace::instance()->enableDependencies(m_body->databaseId(), on);
                 QTimer::singleShot(0, this, [this] { rebuild(); });
             });
         if (m_body->isInline() && v.type != ViewType::Calendar && v.type != ViewType::Timeline && v.type != ViewType::Chart && v.type != ViewType::Form)
-            row(QStringLiteral("number"), tr("Load limit"), QString::number(v.loadLimit), [this] { openPage(QStringLiteral("limit")); });
+            pageRow(QStringLiteral("number"), tr("Load limit"), QString::number(v.loadLimit), QStringLiteral("limit"));
         if (v.type != ViewType::Form && v.type != ViewType::Chart) {
             const QString open = v.openIn == QLatin1String("center") ? tr("Center peek") : v.openIn == QLatin1String("full") ? tr("Full page") : tr("Side peek");
-            row(v.openIn == QLatin1String("center") ? QStringLiteral("peek-center") : QStringLiteral("peek-side"), tr("Open pages in"), open,
-                [this] { openPage(QStringLiteral("openin")); });
+            pageRow(v.openIn == QLatin1String("center") ? QStringLiteral("peek-center") : QStringLiteral("peek-side"), tr("Open pages in"), open,
+                    QStringLiteral("openin"));
         }
         m_layout->addSpacing(6);
         auto *sep = new QFrame;
         sep->setFixedHeight(1);
         sep->setStyleSheet(QStringLiteral("background: #26262d;"));
         m_layout->addWidget(sep);
-        toggle(tr("Lock database"), s.locked, [this](bool on) { editSchema([on](Schema &s) { s.locked = on; }); });
+        toggle(QStringLiteral("lock"), tr("Lock database"), s.locked, [this](bool on) { editSchema([on](Schema &s) { s.locked = on; }); });
         const QString viewId = v.id;
         row(QStringLiteral("link"), tr("Copy link to view"), QString(), [this, viewId] {
             QApplication::clipboard()->setText(QStringLiteral("nebula://page/%1?v=%2").arg(m_body->databaseId(), viewId));

@@ -291,6 +291,22 @@ void FormView::rebuild()
     setFixedHeight(qMax(200, layout()->sizeHint().height() + 12));
 }
 
+bool FormView::event(QEvent *e)
+{
+    // New questions only show (and take up room) once the event loop runs:
+    // grow to fit whenever the card's layout settles.
+    if (e->type() == QEvent::LayoutRequest && layout()) {
+        const bool handled = DbView::event(e);
+        const int h = qMax(200, layout()->sizeHint().height() + 12);
+        if (h != height()) {
+            setFixedHeight(h);
+            emit geometryNeedsUpdate();
+        }
+        return handled;
+    }
+    return DbView::event(e);
+}
+
 void FormView::submit()
 {
     QJsonObject props;

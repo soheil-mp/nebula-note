@@ -468,10 +468,19 @@ protected:
     void resizeEvent(QResizeEvent *) override;
 
 private:
+    // A line of a post's preview, keeping a hint of its block's shape.
+    struct PreviewLine {
+        enum Kind { Text, Heading, Bullet, Number, Todo, Quote } kind = Text;
+        QString text;
+        int depth = 0;
+        int number = 0;
+        bool checked = false;
+    };
     struct Post {
         int row;
         QRectF rect;
-        QString text;
+        QList<PreviewLine> lines;
+        bool more = false; // the preview was cut short
         QString image;
     };
     void layoutPosts();
@@ -490,6 +499,9 @@ public:
     explicit FormView(QWidget *parent = nullptr);
     void setContext(const ViewContext &ctx) override;
     bool showsAllRows() const override { return true; }
+
+protected:
+    bool event(QEvent *e) override;
 
 private:
     void rebuild();

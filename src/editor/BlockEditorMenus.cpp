@@ -582,21 +582,23 @@ void BlockEditor::updateMentionMenu()
             item.id = QStringLiteral("date:%1|%2|%3").arg(when.toString(Qt::ISODate)).arg(hasTime ? 1 : 0).arg(remind ? 1 : 0);
             item.icon = remind ? QStringLiteral("bell") : QStringLiteral("calendar");
             item.title = title;
-            item.subtitle = QLocale(QLocale::English).toString(when.date(), QStringLiteral("dddd, MMMM d, yyyy"))
-                            + (hasTime ? QLatin1Char(' ') + QLocale(QLocale::English).toString(when.time(), QStringLiteral("h:mm AP")) : QString());
+            // The date, short (the title already says how far away, and reminders their time).
+            const QLocale en(QLocale::English);
+            item.subtitle = en.toString(when.date(), when.date().year() == now.date().year() ? QStringLiteral("ddd, MMM d") : QStringLiteral("ddd, MMM d, yyyy"))
+                            + (hasTime && !remind ? QLatin1Char(' ') + en.toString(when.time(), QStringLiteral("h:mm AP")) : QString());
             item.section = remind ? tr("Remind") : tr("Date");
             items.append(item);
         };
         if (query.trimmed().isEmpty()) {
             addDate(QDateTime(now.date(), QTime(0, 0)), false, false, tr("Today"));
             addDate(QDateTime(now.date().addDays(1), QTime(0, 0)), false, false, tr("Tomorrow"));
-            addDate(QDateTime(now.date().addDays(1), QTime(9, 0)), true, true, tr("Remind me tomorrow at 9:00 AM"));
+            addDate(QDateTime(now.date().addDays(1), QTime(9, 0)), true, true, tr("Remind me tomorrow at 9 AM"));
         } else {
             const DateParse::Result r = DateParse::parse(query, now);
             if (r.when.isValid())
                 addDate(r.when, r.hasTime, r.remind, DateParse::relativeLabel(r.when, r.hasTime, now.date()));
             else if (QStringLiteral("remind").startsWith(query.trimmed().toLower()) || query.trimmed().toLower() == QLatin1String("remind me"))
-                addDate(QDateTime(now.date().addDays(1), QTime(9, 0)), true, true, tr("Remind me tomorrow at 9:00 AM"));
+                addDate(QDateTime(now.date().addDays(1), QTime(9, 0)), true, true, tr("Remind me tomorrow at 9 AM"));
             else if (QStringLiteral("today").startsWith(query.trimmed().toLower()) || QStringLiteral("tomorrow").startsWith(query.trimmed().toLower())) {
                 const DateParse::Result g = DateParse::parse(QStringLiteral("today").startsWith(query.trimmed().toLower()) ? QStringLiteral("today")
                                                                                                                          : QStringLiteral("tomorrow"),

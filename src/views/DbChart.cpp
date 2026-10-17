@@ -24,6 +24,17 @@ using namespace DbViewsPrivate;
 
 namespace
 {
+constexpr int kFeedLines = 6;
+constexpr double kFeedLineH = 24;
+
+// "Oct 17 · 2:58 PM", with the year when it isn't this one.
+QString shortDateTime(const QDateTime &t)
+{
+    const QLocale en(QLocale::English);
+    const bool thisYear = t.date().year() == QDate::currentDate().year();
+    return en.toString(t.date(), thisYear ? QStringLiteral("MMM d") : QStringLiteral("MMM d, yyyy")) + QStringLiteral(" · ")
+           + en.toString(t.time(), QStringLiteral("h:mm AP"));
+}
 constexpr double kChartH = 380;
 
 // Series colours: grays from bright to dim, like the rest of Nebula.
@@ -507,7 +518,6 @@ void FeedView::layoutPosts()
     m_addRect = QRectF(left, 0, w, 44);
     y += 56;
     Workspace *ws = Workspace::instance();
-    const QFontMetricsF body(Theme::uiFont(14));
     int props = 0;
     for (const Property *p : m_ctx.schema.orderedProps(m_ctx.view))
         if (p->type != PropType::Title)
@@ -519,19 +529,55 @@ void FeedView::layoutPosts()
         post.row = i;
         if (r.meta && ws) {
             const QList<Block> blocks = ws->content(r.meta->id);
-            post.text = blocksPlainText(blocks).trimmed().left(700);
-            for (const Block &b : blocks)
-                if (b.type == BlockType::Image && !b.media.isEmpty()) {
+            int number = 0;
+            for (const Block &b : blocks) {
+                if (b.type == BlockType::Image && !b.media.isEmpty() && post.image.isEmpty())
                     post.image = b.media;
+                const QString text = b.plainText().simplified();
+                number = b.type == BlockType::Numbered ? number + 1 : 0;
+                if (text.isEmpty())
+                    continue;
+                if (post.lines.size() == kFeedLines) {
+                    post.more = true;
                     break;
                 }
+                PreviewLine line;
+                line.text = text;
+                line.depth = qMin(b.depth, 3);
+                switch (b.type) {
+                case BlockType::Heading1:
+                case BlockType::Heading2:
+                case BlockType::Heading3:
+                case BlockType::Heading4:
+                    line.kind = PreviewLine::Heading;
+                    break;
+                case BlockType::Bullet:
+                    line.kind = PreviewLine::Bullet;
+                    break;
+                case BlockType::Numbered:
+                    line.kind = PreviewLine::Number;
+                    line.number = number;
+                    break;
+                case BlockType::Todo:
+                    line.kind = PreviewLine::Todo;
+                    line.checked = b.checked;
+                    break;
+                case BlockType::Quote:
+                case BlockType::Callout:
+                    line.kind = PreviewLine::Quote;
+                    break;
+                default:
+                    break;
+                }
+                post.lines.append(line);
+            }
         }
         double h = 20 + 26 + 8; // author line, title
         h += 30;                // title
         if (props)
             h += 30;
-        if (!post.text.isEmpty())
-            h += qMin(body.boundingRect(QRectF(0, 0, w - 40, 2000), Qt::TextWordWrap, post.text).height(), body.lineSpacing() * 6) + 10;
+        if (!post.lines.isEmpty())
+            h += post.lines.size() * kFeedLineH + 10;
         if (!post.image.isEmpty())
             h += 260;
         h += 20;
@@ -581,7 +627,7 @@ void FeedView::paintEvent(QPaintEvent *e)
         p.setPen(c.fog);
         if (r.meta)
             p.drawText(QRectF(rect.left() + 52, y, rect.width() - 72, 24), Qt::AlignVCenter | Qt::AlignRight,
-                       en.toString(QDateTime::fromMSecsSinceEpoch(r.meta->created), QStringLiteral("MMM d, yyyy · h:mm ap")));
+                       shortDateTime(QDateTime::fromMSecsSinceEpoch(r.meta->created)));
         y += 34;
         double x = rect.left() + 20;
         if (m_ctx.view.showPageIcon && r.meta && !r.meta->icon.isEmpty()) {
@@ -611,18 +657,60 @@ void FeedView::paintEvent(QPaintEvent *e)
         }
         if (anyProps)
             y += 30;
-        if (!post.text.isEmpty()) {
-            const QFont body = Theme::uiFont(14);
-            const QFontMetricsF fm(body);
-            const double h = qMin(fm.boundingRect(QRectF(0, 0, rect.width() - 40, 2000), Qt::TextWordWrap, post.text).height(), fm.lineSpacing() * 6);
-            p.setFont(body);
-            p.setPen(c.moon);
-            p.save();
-            p.setClipRect(QRectF(rect.left() + 20, y, rect.width() - 40, h));
-            p.drawText(QRectF(rect.left() + 20, y, rect.width() - 40, 2000), Qt::TextWordWrap, post.text);
-            p.restore();
-            y += h + 10;
+        for (int k = 0; k < post.lines.size(); ++k) {
+            const PreviewLine &line = post.lines[k];
+            const QRectF row(rect.left() + 20 + line.depth * 22, y, rect.width() - 40 - line.depth * 22, kFeedLineH);
+            double tx = row.left();
+            QFont f = Theme::uiFont(14, line.kind == PreviewLine::Heading ? QFont::DemiBold : QFont::Normal);
+            QColor pen = line.kind == PreviewLine::Heading ? c.starlight : c.moon;
+            switch (line.kind) {
+            case PreviewLine::Bullet:
+                p.setPen(Qt::NoPen);
+                p.setBrush(c.mist);
+                p.drawEllipse(QPointF(tx + 6, row.center().y()), 2.5, 2.5);
+                tx += 22;
+                break;
+            case PreviewLine::Number:
+                p.setFont(Theme::uiFont(14));
+                p.setPen(c.haze);
+                p.drawText(QRectF(tx, row.top(), 20, row.height()), Qt::AlignVCenter, QStringLiteral("%1.").arg(line.number));
+                tx += 22;
+                break;
+            case PreviewLine::Todo: {
+                const QRectF box(tx + 1, row.center().y() - 7, 14, 14);
+                p.setPen(QPen(line.checked ? c.moon : c.dust, 1.2));
+                p.setBrush(line.checked ? QBrush(c.moon) : QBrush(Qt::NoBrush));
+                p.drawRoundedRect(box, 3.5, 3.5);
+                if (line.checked)
+                    Icons::paint(p, box.adjusted(2, 2, -2, -2), QStringLiteral("check"), c.basalt);
+                tx += 22;
+                if (line.checked) {
+                    f.setStrikeOut(true);
+                    pen = c.fog;
+                }
+                break;
+            }
+            case PreviewLine::Quote:
+                p.setPen(Qt::NoPen);
+                p.setBrush(c.smoke);
+                p.drawRoundedRect(QRectF(tx, row.top() + 3, 2.5, row.height() - 6), 1, 1);
+                tx += 12;
+                pen = c.mist;
+                break;
+            default:
+                break;
+            }
+            // The last line fades out when there's more below.
+            if (post.more && k == post.lines.size() - 1)
+                pen.setAlphaF(0.45);
+            p.setFont(f);
+            p.setPen(pen);
+            p.drawText(QRectF(tx, row.top(), row.right() - tx, row.height()), Qt::AlignVCenter,
+                       QFontMetricsF(f).elidedText(line.text, Qt::ElideRight, row.right() - tx));
+            y += kFeedLineH;
         }
+        if (!post.lines.isEmpty())
+            y += 10;
         if (!post.image.isEmpty()) {
             const QRectF img(rect.left() + 20, y, rect.width() - 40, 250);
             QPainterPath clip;

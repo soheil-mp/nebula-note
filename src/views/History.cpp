@@ -188,9 +188,9 @@ void InboxPopover::rebuild()
     m_items = 0;
     Workspace *ws = Workspace::instance();
     auto section = [&](const QString &text) {
-        auto *l = new QLabel(text.toUpper());
-        l->setFont(Theme::uiFont(11, QFont::DemiBold));
-        l->setStyleSheet(QStringLiteral("color: #7a7a86; padding: 8px 4px 2px 4px;"));
+        auto *l = new QLabel(text);
+        l->setFont(Theme::uiFont(11.5, QFont::DemiBold));
+        l->setStyleSheet(QStringLiteral("color: #7a7a86; padding: 10px 4px 2px 6px;"));
         m_layout->addWidget(l);
     };
     auto title = new QLabel(tr("Inbox"));

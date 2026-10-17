@@ -101,14 +101,6 @@ QLineEdit { background: %6; color: %2; border: 1px solid %3; border-radius: 7px;
 QLineEdit:hover { border-color: #3a3a43; }
 QLineEdit:focus { border-color: %5; }
 QAbstractScrollArea { background: transparent; border: none; }
-QMenu { background: %1; color: %2; border: 1px solid %3; border-radius: 10px; padding: 5px; }
-QMenu::item { padding: 6px 30px 6px 10px; border-radius: 6px; margin: 0 1px; }
-QMenu::item:selected { background: %6; color: %7; }
-QMenu::item:disabled { color: %8; }
-QMenu::icon { padding-left: 8px; }
-QMenu::separator { height: 1px; background: %3; margin: 5px 8px; }
-QMenu::right-arrow { image: url(:/icons/ui/chevron-right.svg); width: 12px; height: 12px; margin-right: 8px; }
-QMenu::indicator { width: 14px; height: 14px; left: 6px; }
 QCheckBox { color: %2; spacing: 9px; }
 QCheckBox::indicator { width: 15px; height: 15px; border: 1px solid #5a5a64; border-radius: 4px; background: transparent; }
 QCheckBox::indicator:hover { border-color: %9; }
@@ -392,7 +384,7 @@ QAction *addMenuSection(QMenu *menu, const QString &text)
     // QMenu's own sections draw as a bare line in this style: a small caption.
     auto *label = new QLabel(text);
     label->setFont(uiFont(11.5, QFont::DemiBold));
-    label->setStyleSheet(QStringLiteral("QLabel { color: #7a7a86; padding: 6px 10px 3px 10px; background: transparent; }"));
+    label->setStyleSheet(QStringLiteral("QLabel { color: #7a7a86; padding: 6px 10px 3px 8px; background: transparent; }"));
     label->setTextFormat(Qt::PlainText);
     auto *action = new QWidgetAction(menu);
     action->setDefaultWidget(label);

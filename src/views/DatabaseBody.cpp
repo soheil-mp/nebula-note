@@ -436,6 +436,7 @@ void DatabaseBody::rebuildTabs()
             item->widget()->deleteLater();
         delete item;
     }
+    m_tabButtons.clear();
     const QList<View> vs = views();
     for (const View &v : vs) {
         auto *tab = new FlatButton(viewTypeIcon(v.type), v.name);
@@ -453,7 +454,26 @@ void DatabaseBody::rebuildTabs()
         });
         connect(tab, &QWidget::customContextMenuRequested, this, [this, id, tab](const QPoint &pos) { viewMenu(id, tab->mapToGlobal(pos)); });
         m_tabsLayout->addWidget(tab);
+        m_tabButtons.append({id, tab});
     }
+    // Views that don't fit wait behind "N more…".
+    m_moreTabs = new FlatButton(QString(), QString());
+    m_moreTabs->setTextSize(13);
+    m_moreTabs->setMuted(true);
+    m_moreTabs->hide();
+    connect(m_moreTabs, &FlatButton::clicked, this, [this] {
+        QMenu *menu = Theme::makeMenu(this);
+        const QList<View> all = views();
+        for (const auto &[id, tab] : std::as_const(m_tabButtons)) {
+            if (!tab->isHidden())
+                continue;
+            for (const View &v : all)
+                if (v.id == id)
+                    menu->addAction(Icons::icon(viewTypeIcon(v.type)), v.name, this, [this, id = id] { selectView(id); });
+        }
+        menu->popup(m_moreTabs->mapToGlobal(QPoint(0, m_moreTabs->height() + 4)));
+    });
+    m_tabsLayout->addWidget(m_moreTabs);
     if (!m_schema.locked) {
         auto *add = new FlatButton(QStringLiteral("plus"));
         add->setToolTip(tr("Add a view"));
@@ -467,6 +487,56 @@ void DatabaseBody::rebuildTabs()
     m_filterBtn->setVisible(!form);
     m_sortBtn->setVisible(!form);
     m_searchBtn->setVisible(!form);
+}
+
+void DatabaseBody::fitTabs()
+{
+    if (!m_moreTabs || m_tabButtons.isEmpty())
+        return;
+    // Room left of the toolbar buttons.
+    int controls = 16;
+    for (QWidget *w : {static_cast<QWidget *>(m_lockBadge), static_cast<QWidget *>(m_search), static_cast<QWidget *>(m_filterBtn),
+                       static_cast<QWidget *>(m_sortBtn), static_cast<QWidget *>(m_searchBtn), static_cast<QWidget *>(m_settingsBtn),
+                       static_cast<QWidget *>(m_newBtn), static_cast<QWidget *>(m_newMenuBtn)})
+        if (!w->isHidden())
+            controls += w->sizeHint().width() + 2;
+    const int addW = m_schema.locked ? 0 : 34;
+    const int avail = m_tabsBar->width() - controls - addW;
+    QList<int> widths;
+    int total = 0;
+    for (const auto &entry : std::as_const(m_tabButtons)) {
+        widths.append(entry.second->sizeHint().width() + 2);
+        total += widths.last();
+    }
+    QSet<int> shown;
+    if (total <= avail) {
+        for (int i = 0; i < widths.size(); ++i)
+            shown.insert(i);
+    } else {
+        // Keep the current view, then as many others (in order) as fit
+        // beside the "more" button.
+        m_moreTabs->setText(tr("%n more…", nullptr, int(m_tabButtons.size())));
+        const int moreW = m_moreTabs->sizeHint().width() + 2;
+        int used = moreW;
+        for (int i = 0; i < m_tabButtons.size(); ++i)
+            if (m_tabButtons[i].first == m_viewId) {
+                shown.insert(i);
+                used += widths[i];
+            }
+        for (int i = 0; i < m_tabButtons.size(); ++i) {
+            if (shown.contains(i))
+                continue;
+            if (used + widths[i] > avail)
+                break;
+            shown.insert(i);
+            used += widths[i];
+        }
+    }
+    const int hidden = int(m_tabButtons.size() - shown.size());
+    for (int i = 0; i < m_tabButtons.size(); ++i)
+        m_tabButtons[i].second->setVisible(shown.contains(i));
+    m_moreTabs->setText(tr("%n more…", nullptr, hidden));
+    m_moreTabs->setVisible(hidden > 0);
 }
 
 void DatabaseBody::rebuildChips()
@@ -610,6 +680,7 @@ void DatabaseBody::relayout()
     m_newMenuBtn->setVisible(!compact);
     m_newBtn->setText(compact ? QString() : tr("New"));
     m_tabsBar->setGeometry(m_left - 8, y, colW + 8, kBarH);
+    fitTabs();
     m_bulkBar->setGeometry(m_left - 4, y, colW + 4, kBarH);
     y += kBarH + 2;
     if (!m_chipsBar->isHidden()) {

@@ -69,6 +69,7 @@ protected:
 private:
     void relayout();
     void rebuildTabs();
+    void fitTabs();
     void rebuildChips();
     void rebuildBulkBar();
     DbView *viewFor(ViewType type);
@@ -94,6 +95,8 @@ private:
     FlatButton *m_openFull = nullptr;
     QWidget *m_tabsBar;
     QHBoxLayout *m_tabsLayout;
+    QList<QPair<QString, FlatButton *>> m_tabButtons; // view id → tab
+    FlatButton *m_moreTabs = nullptr;                // "2 more…" when tabs overflow
     QWidget *m_bulkBar;
     QHBoxLayout *m_bulkLayout;
     QWidget *m_chipsBar;

@@ -11,6 +11,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QPainter>
+#include <QPointer>
 #include <QPushButton>
 #include <QScreen>
 #include <QVBoxLayout>
@@ -34,10 +35,20 @@ void Popover::popupAt(const QPoint &globalPos)
     adjustSize();
     QPoint pos = globalPos - QPoint(kShadow, kShadow - 6);
     if (QScreen *screen = QGuiApplication::screenAt(globalPos)) {
-        const QRect avail = screen->availableGeometry();
+        QRect avail = screen->availableGeometry();
+        // Stay inside the window when the card fits in it, as Notion's do.
+        if (QWidget *host = parentWidget() ? parentWidget()->window() : nullptr) {
+            const QRect win(host->mapToGlobal(QPoint(0, 0)), host->size());
+            if (height() - 2 * kShadow <= win.height() && width() - 2 * kShadow <= win.width())
+                avail = avail.intersected(win);
+        }
         pos.setX(qBound(avail.left() - kShadow, pos.x(), avail.right() - width() + kShadow));
-        if (pos.y() + height() > avail.bottom() + kShadow)
-            pos.setY(qMax(avail.top(), globalPos.y() - height() - 4 + kShadow));
+        if (pos.y() + height() > avail.bottom() + kShadow) {
+            // Flip above the anchor; if there's no room there either, rise
+            // just enough to end at the bottom edge.
+            const int above = globalPos.y() - height() - 4 + kShadow;
+            pos.setY(above >= avail.top() - kShadow ? above : qMax(avail.top() - kShadow, avail.bottom() + kShadow - height()));
+        }
     }
     move(pos);
     show();
@@ -283,6 +294,31 @@ void Toast::mousePressEvent(QMouseEvent *e)
 
 namespace
 {
+// Dims the window behind a dialog so the question stands out.
+class Scrim : public QWidget
+{
+public:
+    explicit Scrim(QWidget *host)
+        : QWidget(host)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setGeometry(host->rect());
+        raise();
+        show();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(0, 0, 0, 105));
+        const bool square = window()->isMaximized() || window()->isFullScreen();
+        p.drawRoundedRect(QRectF(rect()), square ? 0 : Theme::kRadius, square ? 0 : Theme::kRadius);
+    }
+};
+
 class StyledDialog : public QDialog
 {
 public:
@@ -291,7 +327,10 @@ public:
     {
         setAttribute(Qt::WA_TranslucentBackground);
         setModal(true);
+        if (parent && parent->window())
+            m_scrim = new Scrim(parent->window());
     }
+    ~StyledDialog() override { delete m_scrim; }
 
 protected:
     void paintEvent(QPaintEvent *) override
@@ -302,6 +341,9 @@ protected:
         Theme::paintSoftShadow(p, card, 14, 16, 1.6);
         Theme::paintCard(p, card, 14, Theme::colors().slate);
     }
+
+private:
+    QPointer<Scrim> m_scrim;
 };
 
 QPushButton *dialogButton(const QString &text, bool primary, bool destructive)

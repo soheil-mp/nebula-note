@@ -80,9 +80,9 @@ FormulaEditor::FormulaEditor(QWidget *parent, const QString &databaseId, const Q
 
     // Properties first, then functions by group.
     auto header = [&](const QString &text) {
-        auto *item = new QListWidgetItem(text.toUpper());
+        auto *item = new QListWidgetItem(text);
         item->setFlags(Qt::NoItemFlags);
-        item->setFont(Theme::uiFont(11, QFont::DemiBold));
+        item->setFont(Theme::uiFont(11.5, QFont::DemiBold));
         item->setForeground(QColor(0x7a, 0x7a, 0x86));
         m_list->addItem(item);
     };

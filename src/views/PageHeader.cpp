@@ -485,14 +485,23 @@ void PageHeader::setColumn(int x, int width)
         return;
     m_colX = x;
     m_colW = width;
+    updateTitleSize();
     relayout();
 }
 
 void PageHeader::setSmall(bool small)
 {
     m_small = small;
-    m_title->setPixelSize(small ? 32 : 40);
+    updateTitleSize();
     relayout();
+}
+
+void PageHeader::updateTitleSize()
+{
+    // Small text, and narrow columns (a side peek), get a smaller title.
+    const double px = m_small || (m_colW > 0 && m_colW < 560) ? 32 : 40;
+    if (!qFuzzyCompare(m_title->pixelSize(), px))
+        m_title->setPixelSize(px);
 }
 
 void PageHeader::setEditable(bool editable)

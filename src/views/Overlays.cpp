@@ -30,6 +30,8 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
+
 // ---- ModalOverlay ----------------------------------------------------------------
 
 ModalOverlay::ModalOverlay(QWidget *host, const QSize &cardSize, int topOffset)
@@ -156,6 +158,9 @@ public:
             y += h;
         }
         setFixedHeight(qMax(80, y + 8));
+        // Room for the "no pages match" note under a lone create row.
+        if (std::none_of(m_items.cbegin(), m_items.cend(), [](const Item &it) { return it.id.startsWith(QLatin1String("page:")); }))
+            setFixedHeight(qMax(height(), y + 110));
         update();
     }
     void move(int d)
@@ -231,6 +236,16 @@ protected:
                 p.drawText(QRectF(x, row.top() + 26, row.right() - x - 12, 18), Qt::AlignVCenter,
                            QFontMetricsF(p.font()).elidedText(it.sub, Qt::ElideRight, row.right() - x - 12));
             }
+        }
+        // Searching found nothing but the offer to create: say so.
+        const bool noPages = std::none_of(m_items.cbegin(), m_items.cend(), [](const Item &it) { return it.id.startsWith(QLatin1String("page:")); });
+        const bool creating = std::any_of(m_items.cbegin(), m_items.cend(), [](const Item &it) { return it.id.startsWith(QLatin1String("create:")); });
+        if (noPages && creating && !m_rows.isEmpty()) {
+            const double top = m_rows.last().y + m_rows.last().h + 48;
+            Cosmos::paintPlanet(p, QPointF(width() / 2.0, top), 12, 0.9, true);
+            p.setFont(Theme::uiFont(13.5));
+            p.setPen(c.fog);
+            p.drawText(QRectF(0, top + 20, width(), 24), Qt::AlignCenter, tr("No pages match"));
         }
     }
     void mouseMoveEvent(QMouseEvent *e) override

@@ -100,10 +100,13 @@ public:
         m_quickTop = y;
         y += 36;
         const QStringList actions = {QStringLiteral("new"), QStringLiteral("db"), QStringLiteral("templates"), QStringLiteral("import")};
-        const double tileW = (colW - 3 * gap) / 4;
+        // Four across, or two by two when they'd get cramped.
+        const int cols = colW >= 4 * 200 + 3 * gap ? 4 : 2;
+        const double tileW = (colW - (cols - 1) * gap) / cols;
         for (int i = 0; i < actions.size(); ++i)
-            m_targets.append({QRectF(x0 + i * (tileW + gap), y, tileW, 76), actions[i]});
-        y += 76 + 40;
+            m_targets.append({QRectF(x0 + (i % cols) * (tileW + gap), y + (i / cols) * (76 + gap), tileW, 76), actions[i]});
+        const int tileRows = (int(actions.size()) + cols - 1) / cols;
+        y += tileRows * 76 + (tileRows - 1) * gap + 40;
         // Upcoming.
         m_upcomingTop = y;
         y += 36;
@@ -312,7 +315,8 @@ protected:
                 Icons::paint(p, iconBox.adjusted(9, 9, -9, -9), icon, hover ? c.starlight : c.moon);
                 p.setFont(Theme::uiFont(14, QFont::DemiBold));
                 p.setPen(c.starlight);
-                p.drawText(QRectF(iconBox.right() + 12, r.top() + 16, r.width() - 80, 22), Qt::AlignVCenter, title);
+                p.drawText(QRectF(iconBox.right() + 12, r.top() + 16, r.width() - 80, 22), Qt::AlignVCenter,
+                           QFontMetricsF(p.font()).elidedText(title, Qt::ElideRight, r.width() - 80));
                 p.setFont(Theme::uiFont(12));
                 p.setPen(c.fog);
                 p.drawText(QRectF(iconBox.right() + 12, r.top() + 38, r.width() - 80, 20), Qt::AlignVCenter,

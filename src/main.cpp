@@ -7,6 +7,7 @@
 #include "ui/ExportRenderers.h"
 #include "ui/NetFetch.h"
 #include "ui/Plurals.h"
+#include "ui/Style.h"
 #include "ui/Theme.h"
 #include "views/MainWindow.h"
 
@@ -24,7 +25,6 @@
 #include <QKeyEvent>
 #include <QPainter>
 #include <QStandardPaths>
-#include <QStyleFactory>
 #include <QSvgRenderer>
 #include <QTimer>
 #include <QTranslator>
@@ -208,7 +208,7 @@ int main(int argc, char **argv)
     installExportRenderers();
     installImportFetcher();
     loadFonts();
-    QApplication::setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
+    QApplication::setStyle(new NebulaStyle);
     app.setPalette(Theme::palette());
     app.setFont(Theme::uiFont(13));
     app.setStyleSheet(Theme::styleSheet());

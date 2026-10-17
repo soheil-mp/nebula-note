@@ -22,6 +22,7 @@
 #include <QFontDatabase>
 #include <QJsonArray>
 #include <QLabel>
+#include <QLayout>
 #include <QLineEdit>
 #include <QScrollArea>
 #include <QSet>
@@ -606,6 +607,11 @@ private slots:
         QCOMPARE(m_ws->props(row->id).value(QStringLiteral("done")).toBool(), true);
         QVERIFY(title->text().isEmpty()); // cleared for the next answer
         m_ws->deleteForever(row->id);
+        // Every question takes up room once shown (they used to be cut off).
+        QApplication::processEvents();
+        QApplication::processEvents();
+        QVERIFY(f->height() >= f->layout()->sizeHint().height());
+        QVERIFY(f->height() > 400);
     }
 
     // ---- filters -------------------------------------------------------------------

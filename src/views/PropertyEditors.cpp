@@ -182,6 +182,144 @@ private:
     int m_current = -1;
 };
 
+// The chosen options as removable chips, with the search field flowing
+// after them, all inside one input-like box.
+class ChipField : public QWidget
+{
+    Q_OBJECT
+public:
+    struct Chip {
+        QString id;
+        QString name;
+        int shade = 0;
+    };
+    explicit ChipField(QWidget *parent = nullptr)
+        : QWidget(parent)
+    {
+        m_edit = new QLineEdit(this);
+        m_edit->setFrame(false);
+        m_edit->setFont(Theme::uiFont(13.5));
+        m_edit->setStyleSheet(QStringLiteral("QLineEdit { background: transparent; border: none; padding: 0; }"));
+        m_edit->installEventFilter(this);
+        setCursor(Qt::IBeamCursor);
+        setMouseTracking(true);
+        relayout();
+    }
+    QLineEdit *edit() const { return m_edit; }
+    void setPlaceholder(const QString &text)
+    {
+        m_placeholder = text;
+        m_edit->setPlaceholderText(m_chips.isEmpty() ? text : QString());
+    }
+    void setChips(const QList<Chip> &chips)
+    {
+        m_chips = chips;
+        m_edit->setPlaceholderText(m_chips.isEmpty() ? m_placeholder : QString());
+        relayout();
+        update();
+    }
+    QSize sizeHint() const override { return {260, m_height}; }
+    QSize minimumSizeHint() const override { return {120, m_height}; }
+
+signals:
+    void removeRequested(const QString &id);
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched == m_edit && (event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut))
+            update();
+        return QWidget::eventFilter(watched, event);
+    }
+    void resizeEvent(QResizeEvent *) override { relayout(); }
+    void paintEvent(QPaintEvent *) override
+    {
+        const auto &c = Theme::colors();
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(QPen(m_edit->hasFocus() ? c.dust : c.ash, 1));
+        p.setBrush(c.graphite);
+        p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 7, 7);
+        for (int i = 0; i < m_chips.size(); ++i) {
+            const QRectF r = m_rects.value(i);
+            const Theme::Pill pill = Theme::optionPill(m_chips[i].shade);
+            p.setPen(QPen(pill.border, 1));
+            p.setBrush(pill.fill);
+            p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), 6, 6);
+            p.setPen(pill.text);
+            p.setFont(Theme::uiFont(12.5, QFont::Medium));
+            p.drawText(r.adjusted(8, 0, -20, 0), Qt::AlignVCenter | Qt::AlignLeft, m_chips[i].name);
+            const QRectF x = closeRect(i);
+            QColor xc = pill.text;
+            xc.setAlphaF(i == m_hoverClose ? 1.0 : 0.6);
+            Icons::paint(p, x, QStringLiteral("close"), xc);
+        }
+    }
+    void mouseMoveEvent(QMouseEvent *e) override
+    {
+        int h = -1;
+        for (int i = 0; i < m_chips.size(); ++i)
+            if (closeRect(i).adjusted(-3, -3, 3, 3).contains(e->position()))
+                h = i;
+        if (h != m_hoverClose) {
+            m_hoverClose = h;
+            setCursor(h >= 0 ? Qt::PointingHandCursor : Qt::IBeamCursor);
+            update();
+        }
+    }
+    void mousePressEvent(QMouseEvent *e) override
+    {
+        for (int i = 0; i < m_chips.size(); ++i)
+            if (closeRect(i).adjusted(-3, -3, 3, 3).contains(e->position())) {
+                emit removeRequested(m_chips[i].id);
+                return;
+            }
+        m_edit->setFocus();
+    }
+
+private:
+    QRectF closeRect(int i) const
+    {
+        const QRectF r = m_rects.value(i);
+        return QRectF(r.right() - 16, r.center().y() - 5, 10, 10);
+    }
+    void relayout()
+    {
+        const double pad = 6, gap = 5, chipH = 22;
+        const double right = qMax(100, width()) - pad;
+        double x = pad + 2, y = pad;
+        m_rects.clear();
+        const QFontMetricsF fm(Theme::uiFont(12.5, QFont::Medium));
+        for (const Chip &chip : m_chips) {
+            const double w = qMin(fm.horizontalAdvance(chip.name) + 28, right - pad - 2);
+            if (x + w > right && x > pad + 2) {
+                x = pad + 2;
+                y += chipH + gap;
+            }
+            m_rects.append(QRectF(x, y, w, chipH));
+            x += w + gap;
+        }
+        if (right - x < 50 && !m_chips.isEmpty()) {
+            x = pad + 4;
+            y += chipH + gap;
+        }
+        m_edit->setGeometry(int(x + 2), int(y), int(right - x - 2), int(chipH));
+        const int h = int(y + chipH + pad);
+        if (h != m_height) {
+            m_height = h;
+            setFixedHeight(h);
+            updateGeometry();
+        }
+    }
+
+    QLineEdit *m_edit;
+    QString m_placeholder;
+    QList<Chip> m_chips;
+    QList<QRectF> m_rects;
+    int m_hoverClose = -1;
+    int m_height = 34;
+};
+
 class OptionEditor : public Popover
 {
     Q_OBJECT
@@ -195,12 +333,29 @@ public:
         auto *v = new QVBoxLayout(content());
         v->setContentsMargins(8, 8, 8, 8);
         v->setSpacing(6);
-        m_input = new QLineEdit;
-        m_input->setPlaceholderText(tr("Search for an option…"));
-        m_input->setMinimumWidth(qMax(260, minWidth));
-        m_input->setFont(Theme::uiFont(13.5));
-        v->addWidget(m_input);
+        m_field = new ChipField;
+        m_field->setPlaceholder(tr("Search for an option…"));
+        m_field->setMinimumWidth(qMax(260, minWidth));
+        m_input = m_field->edit();
+        v->addWidget(m_field);
+        connect(m_field, &ChipField::removeRequested, this, [this](const QString &id) {
+            Workspace *ws = Workspace::instance();
+            const QJsonValue v = ws->props(m_row).value(m_propId);
+            if (v.isArray()) {
+                QJsonArray a = v.toArray();
+                for (int i = 0; i < a.size(); ++i)
+                    if (a[i].toString() == id) {
+                        a.removeAt(i);
+                        break;
+                    }
+                ws->setProp(m_row, m_propId, a.isEmpty() ? QJsonValue() : QJsonValue(a));
+            } else {
+                ws->setProp(m_row, m_propId, QJsonValue());
+            }
+            refresh();
+        });
         auto *scroll = new QScrollArea;
+        m_scroll = scroll;
         scroll->setWidgetResizable(true);
         scroll->setFrameStyle(QFrame::NoFrame);
         scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -290,6 +445,15 @@ private:
         if (!q.isEmpty() && !prop->optionByName(q))
             rows.append({OptionList::Row::Create, q, QString(), false});
         m_list->setRows(rows, *prop);
+        // Chips for what's chosen, in the value's order.
+        QList<ChipField::Chip> chips;
+        const QJsonArray chosen = value.isArray() ? value.toArray() : value.isString() ? QJsonArray{value} : QJsonArray();
+        for (const QJsonValue &x : chosen)
+            if (const Option *o = prop->option(x.toString()))
+                chips.append({o->id, o->name, o->shade});
+        m_field->setChips(chips);
+        // Show every option, up to a scrolling limit.
+        m_scroll->setFixedHeight(qMin(320, m_list->height()));
         adjustSize();
     }
 
@@ -403,7 +567,9 @@ private:
 
     QString m_db, m_row, m_propId;
     Schema m_schema;
+    ChipField *m_field;
     QLineEdit *m_input;
+    QScrollArea *m_scroll;
     OptionList *m_list;
 };
 
@@ -1178,6 +1344,17 @@ void paintPeople(QPainter &p, const QRectF &rect, const QJsonValue &value)
 }
 } // namespace
 
+namespace
+{
+// "+3": how many more items didn't fit.
+void paintMoreCount(QPainter &p, const QPointF &leftCenter, int count)
+{
+    p.setFont(Theme::uiFont(12, QFont::Medium));
+    p.setPen(Theme::colors().fog);
+    p.drawText(QRectF(leftCenter.x(), leftCenter.y() - 10, 40, 20), Qt::AlignVCenter | Qt::AlignLeft, QStringLiteral("+%1").arg(count));
+}
+} // namespace
+
 void paintValue(QPainter &p, const QRectF &rect, const Property &prop, const QJsonValue &value, bool dim, Qt::Alignment align)
 {
     const auto &c = Theme::colors();
@@ -1299,21 +1476,25 @@ void paintValue(QPainter &p, const QRectF &rect, const Property &prop, const QJs
     }
     case PropType::Relation: {
         Workspace *ws = Workspace::instance();
+        const QStringList ids = relationIds(value);
         double x = rect.left();
-        for (const QString &id : relationIds(value)) {
-            const PageMeta *m = ws ? ws->page(id) : nullptr;
+        for (int i = 0; i < ids.size(); ++i) {
+            // Out of room: a count of the rest rather than a cut-off title.
+            if (i > 0 && rect.right() - x < 56) {
+                paintMoreCount(p, QPointF(x, cy), int(ids.size()) - i);
+                break;
+            }
+            const PageMeta *m = ws ? ws->page(ids[i]) : nullptr;
             Icons::paintPageIcon(p, QRectF(x, cy - 8, 16, 16), m ? m->icon : QString(), c.mist, QStringLiteral("page"));
             x += 20;
             QFont f = Theme::uiFont(13.5);
             f.setUnderline(true);
             p.setFont(f);
             p.setPen(c.moon);
-            const QString t = ws ? ws->title(id) : id;
-            const double w = QFontMetricsF(f).horizontalAdvance(t);
-            p.drawText(QRectF(x, rect.top(), qMin(w + 2, rect.right() - x), rect.height()), Qt::AlignVCenter, t);
-            x += w + 12;
-            if (x > rect.right())
-                break;
+            const QFontMetricsF fm(f);
+            const QString t = fm.elidedText(ws ? ws->title(ids[i]) : ids[i], Qt::ElideRight, rect.right() - x);
+            p.drawText(QRectF(x, rect.top(), rect.right() - x, rect.height()), Qt::AlignVCenter, t);
+            x += fm.horizontalAdvance(t) + 12;
         }
         break;
     }
@@ -1323,17 +1504,21 @@ void paintValue(QPainter &p, const QRectF &rect, const Property &prop, const QJs
         paintPeople(p, rect, value);
         break;
     case PropType::Files: {
+        const QList<FileRef> files = filesOf(value);
         double x = rect.left();
-        for (const FileRef &f : filesOf(value)) {
+        for (int i = 0; i < files.size(); ++i) {
+            if (i > 0 && rect.right() - x < 56) {
+                paintMoreCount(p, QPointF(x, cy), int(files.size()) - i);
+                break;
+            }
             Icons::paint(p, QRectF(x, cy - 7, 14, 14), QStringLiteral("paperclip"), c.mist);
             x += 18;
             p.setFont(Theme::uiFont(13.5));
             p.setPen(c.moon);
-            const double w = QFontMetricsF(p.font()).horizontalAdvance(f.name);
-            p.drawText(QRectF(x, rect.top(), qMin(w + 2, rect.right() - x), rect.height()), Qt::AlignVCenter, f.name);
-            x += w + 12;
-            if (x > rect.right())
-                break;
+            const QFontMetricsF fm(p.font());
+            const QString t = fm.elidedText(files[i].name, Qt::ElideRight, rect.right() - x);
+            p.drawText(QRectF(x, rect.top(), rect.right() - x, rect.height()), Qt::AlignVCenter, t);
+            x += fm.horizontalAdvance(t) + 12;
         }
         break;
     }

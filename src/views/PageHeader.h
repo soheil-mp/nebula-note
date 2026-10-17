@@ -17,6 +17,7 @@ public:
     void setTitle(const QString &title);
     QString title() const;
     void setPixelSize(double px);
+    double pixelSize() const { return m_px; }
     void setPlaceholder(const QString &text) { m_placeholder = text; }
     void focusEnd();
     int preferredHeight() const;
@@ -109,6 +110,7 @@ protected:
     void resizeEvent(QResizeEvent *) override;
 
 private:
+    void updateTitleSize();
     void pickIcon(const QPoint &globalPos);
     void pickCover(const QPoint &globalPos);
     QRectF iconRect() const;
