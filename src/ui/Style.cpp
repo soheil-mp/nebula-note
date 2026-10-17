@@ -91,9 +91,9 @@ void NebulaStyle::drawControl(ControlElement element, const QStyleOption *option
     painter->setFont(mi->font);
     painter->setPen(text);
     const QFontMetrics fm(mi->font);
-    int flags = Qt::AlignVCenter | Qt::AlignLeft | Qt::TextSingleLine;
-    flags |= styleHint(SH_UnderlineShortcut, mi, widget) ? Qt::TextShowMnemonic : Qt::TextHideMnemonic;
-    painter->drawText(QRect(x, r.top(), right - x, r.height()), flags, fm.elidedText(label, Qt::ElideRight, right - x, Qt::TextShowMnemonic));
+    // No mnemonics in this app: an "&" is just an ampersand ("Files & media").
+    painter->drawText(QRect(x, r.top(), right - x, r.height()), Qt::AlignVCenter | Qt::AlignLeft | Qt::TextSingleLine,
+                      fm.elidedText(label, Qt::ElideRight, right - x));
     painter->restore();
 }
 
@@ -111,7 +111,7 @@ QSize NebulaStyle::sizeFromContents(ContentsType type, const QStyleOption *optio
         label = label.left(tab);
     }
     const QFontMetrics fm(mi->font);
-    int w = 2 * kPadX + 8 + fm.horizontalAdvance(QString(label).remove(QLatin1Char('&')));
+    int w = 2 * kPadX + 8 + fm.horizontalAdvance(label);
     if (mi->menuHasCheckableItems)
         w += kCheckCol;
     if (mi->maxIconWidth > 0)
