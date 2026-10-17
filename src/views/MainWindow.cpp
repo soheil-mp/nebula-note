@@ -928,7 +928,8 @@ void MainWindow::showPageMenu(const QString &pageId, const QPoint &globalPos, bo
         QAction *info = menu->addAction(tr("%n word(s) · edited %1", nullptr, words).arg(relativeTime(m->updated)));
         info->setEnabled(false);
     }
-    menu->popup(globalPos);
+    // From the top bar the menu hangs from the right edge of its button.
+    menu->popup(fromSidebar ? globalPos : globalPos - QPoint(menu->sizeHint().width(), 0));
 }
 
 // ---- sidebar -------------------------------------------------------------------------

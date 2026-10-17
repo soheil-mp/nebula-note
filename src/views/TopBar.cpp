@@ -93,6 +93,12 @@ void TopBar::relayout()
         const double w = QFontMetricsF(Theme::uiFont(12.5)).horizontalAdvance(m_edited);
         r -= w + 12;
         m_editedRect = QRectF(r, 0, w, height());
+        // Locked pages say so, and a click unlocks them.
+        if (ws->options(m_pageId).locked) {
+            const double lw = QFontMetricsF(Theme::uiFont(12.5, QFont::Medium)).horizontalAdvance(tr("Locked")) + 34;
+            r -= lw + 10;
+            m_hits.append({QStringLiteral("unlock"), QRectF(r, cy - 13, lw, 26), tr("Click to unlock the page")});
+        }
     }
 
     // Breadcrumbs between.
@@ -164,6 +170,17 @@ void TopBar::paintEvent(QPaintEvent *)
         const bool hover = i == m_hover;
         if (h.id.startsWith(QLatin1String("crumb:")))
             continue;
+        if (h.id == QLatin1String("unlock")) {
+            // A quiet chip: lock glyph and "Locked".
+            p.setPen(QPen(hover ? c.smoke : c.ash, 1));
+            p.setBrush(hover ? QBrush(c.graphite) : QBrush(Qt::NoBrush));
+            p.drawRoundedRect(h.rect.adjusted(0.5, 0.5, -0.5, -0.5), 7, 7);
+            Icons::paint(p, QRectF(h.rect.left() + 9, h.rect.center().y() - 7, 14, 14), QStringLiteral("lock"), hover ? c.starlight : c.mist);
+            p.setFont(Theme::uiFont(12.5, QFont::Medium));
+            p.setPen(hover ? c.starlight : c.mist);
+            p.drawText(h.rect.adjusted(27, 0, -6, 0), Qt::AlignVCenter, tr("Locked"));
+            continue;
+        }
         QString icon;
         QColor color = hover ? c.starlight : c.haze;
         bool enabled = true;
@@ -269,7 +286,12 @@ void TopBar::mousePressEvent(QMouseEvent *e)
     else if (id == QLatin1String("star"))
         emit favoriteToggled();
     else if (id == QLatin1String("more"))
-        emit pageMenuRequested(mapToGlobal(QPoint(int(m_hits[h].rect.right()) - 240, int(m_hits[h].rect.bottom()) + 6)));
+        emit pageMenuRequested(mapToGlobal(QPoint(int(m_hits[h].rect.right()), int(m_hits[h].rect.bottom()) + 6)));
+    else if (id == QLatin1String("unlock")) {
+        PageOptions o = Workspace::instance()->options(m_pageId);
+        o.locked = false;
+        Workspace::instance()->setOptions(m_pageId, o);
+    }
     else if (id == QLatin1String("min"))
         emit minimizeRequested();
     else if (id == QLatin1String("max"))
