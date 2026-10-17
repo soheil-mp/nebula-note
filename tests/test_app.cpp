@@ -110,10 +110,14 @@ private slots:
         QVERIFY(m_ws->exists(id));
         TitleEdit *title = page->findChild<TitleEdit *>();
         QVERIFY(title->hasFocus());
+        // An empty page offers starting points until you start writing.
+        QWidget *starter = page->findChild<QWidget *>(QStringLiteral("starter"));
+        QVERIFY(starter && !starter->isHidden());
         QTest::keyClicks(title, QStringLiteral("Orbital notes"));
         QTest::keyClick(title, Qt::Key_Return);
         settle(300);
         QCOMPARE(m_ws->page(id)->title, QStringLiteral("Orbital notes"));
+        QVERIFY(starter->isHidden());
         BlockEditor *ed = page->editor();
         QVERIFY(ed->hasFocus());
         QTest::keyClicks(ed, QStringLiteral("# Plan"));

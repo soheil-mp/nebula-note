@@ -46,6 +46,7 @@ protected:
 private:
     void relayout();
     void updateStarter();
+    void startWriting();
     void updateBacklinks();
     void runFind(int step);
     void closeFind();
@@ -58,6 +59,7 @@ private:
     OutlineRail *m_outline;
     bool m_discussionOpen = false;
     QWidget *m_starter;
+    bool m_starterDismissed = false; // Enter in the title, or a click into the body
     BlockEditor *m_editor;
     class Backlinks *m_backlinks;
     QWidget *m_findBar;

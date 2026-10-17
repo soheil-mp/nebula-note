@@ -135,8 +135,10 @@ void run(MainWindow &window, const QString &action)
     else if (action.startsWith(QLatin1String("type:"))) {
         QWidget *w = QApplication::focusWidget() ? QApplication::focusWidget() : &window;
         for (const QChar ch : arg) {
-            QKeyEvent key(QEvent::KeyPress, 0, Qt::NoModifier, QString(ch));
-            QApplication::sendEvent(w, &key);
+            // Keys with codes, as a keyboard sends them (shortcuts look at the key).
+            const int code = ch == QLatin1Char(' ') ? Qt::Key_Space : ch.isLetterOrNumber() ? int(ch.toUpper().unicode()) : 0;
+            QKeyEvent key(QEvent::KeyPress, code, Qt::NoModifier, QString(ch));
+            QApplication::sendEvent(QApplication::focusWidget() ? QApplication::focusWidget() : w, &key);
         }
     } else if (action.startsWith(QLatin1String("key:"))) {
         const QKeySequence seq(arg);

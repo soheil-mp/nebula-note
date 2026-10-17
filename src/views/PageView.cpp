@@ -311,6 +311,7 @@ PageView::PageView(QWidget *parent)
 
     // Starter for empty pages.
     m_starter = new QWidget(m_canvas);
+    m_starter->setObjectName(QStringLiteral("starter"));
     auto *sv = new QVBoxLayout(m_starter);
     sv->setContentsMargins(0, 4, 0, 4);
     sv->setSpacing(1);
@@ -325,7 +326,7 @@ PageView::PageView(QWidget *parent)
         connect(b, &FlatButton::clicked, this, fn);
         sv->addWidget(b, 0, Qt::AlignLeft);
     };
-    addStarter(QStringLiteral("page-empty"), tr("Empty page"), [this] { m_editor->focusStart(); });
+    addStarter(QStringLiteral("page-empty"), tr("Empty page"), [this] { startWriting(); });
     addStarter(QStringLiteral("template"), tr("Templates"), [this] { emit templatesRequested(m_pageId); });
     addStarter(QStringLiteral("download"), tr("Import"), [this] { emit importRequested(m_pageId); });
     auto *dbLabel = new QLabel(tr("Turn into a database"));
@@ -398,7 +399,11 @@ PageView::PageView(QWidget *parent)
     connect(close, &FlatButton::clicked, this, &PageView::closeFind);
     m_findField->installEventFilter(this);
 
-    canvas->clickedBelow = [this] { m_editor->focusEnd(true); };
+    canvas->clickedBelow = [this] {
+        m_starterDismissed = true;
+        m_editor->focusEnd(true);
+        updateStarter();
+    };
     connect(m_header, &PageHeader::heightChanged, this, &PageView::relayout);
     connect(m_header, &PageHeader::titleSubmitted, this, [this] {
         // Enter in the title starts (or continues) the body at the top.
@@ -409,10 +414,9 @@ PageView::PageView(QWidget *parent)
             c.movePosition(QTextCursor::PreviousBlock);
             c.endEditBlock();
         }
-        m_editor->focusStart();
-        updateStarter();
+        startWriting();
     });
-    connect(m_header, &PageHeader::titleExitDown, this, [this] { m_editor->focusStart(); });
+    connect(m_header, &PageHeader::titleExitDown, this, [this] { startWriting(); });
     connect(m_props, &PropertyPanel::heightChanged, this, &PageView::relayout);
     connect(m_discussion, &Discussion::heightChanged, this, &PageView::relayout);
     connect(m_header, &PageHeader::commentRequested, this, [this] {
@@ -523,6 +527,7 @@ void PageView::setPage(const QString &pageId)
     flush();
     closeFind();
     m_pageId = pageId;
+    m_starterDismissed = false;
     m_header->setPage(pageId);
     m_props->setRow(pageId);
     m_editor->setPage(pageId);
@@ -578,11 +583,20 @@ void PageView::focusDefault()
         m_editor->setFocus();
 }
 
+void PageView::startWriting()
+{
+    // The starting points step aside once you start writing.
+    m_starterDismissed = true;
+    m_editor->focusStart();
+    updateStarter();
+}
+
 void PageView::updateStarter()
 {
     Workspace *ws = Workspace::instance();
     const PageMeta *m = ws ? ws->page(m_pageId) : nullptr;
-    const bool show = m && !m->isRow() && m_editor->isEmptyPage() && !ws->hasChildren(m_pageId) && !ws->options(m_pageId).locked;
+    const bool show = m && !m->isRow() && !m_starterDismissed && m_editor->isEmptyPage() && !ws->hasChildren(m_pageId)
+                      && !ws->options(m_pageId).locked;
     if (show == m_starter->isHidden()) {
         m_starter->setVisible(show);
         relayout();
