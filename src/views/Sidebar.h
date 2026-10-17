@@ -71,6 +71,7 @@ private:
     bool m_dragging = false;
     int m_dropRow = -1;
     int m_dropMode = 0; // -1 above, 0 into, 1 below
+    QPoint m_dragPos;   // where the dragged row's ghost follows the pointer
     QPointer<QLineEdit> m_rename;
     QString m_renameId;
 };

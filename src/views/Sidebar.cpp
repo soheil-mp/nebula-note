@@ -272,6 +272,8 @@ void PageTree::paintEvent(QPaintEvent *e)
         }
         const bool current = r.id == m_current;
         const bool hover = i == m_hover;
+        // The row being dragged stays behind, faded.
+        p.setOpacity(m_dragging && i == m_pressRow ? 0.4 : 1.0);
         if (current) {
             p.setPen(Qt::NoPen);
             p.setBrush(Theme::withAlpha(QColor(255, 255, 255), 0.075));
@@ -282,8 +284,11 @@ void PageTree::paintEvent(QPaintEvent *e)
         if (m_dragging && i == m_dropRow) {
             p.setPen(Qt::NoPen);
             if (m_dropMode == 0) {
-                p.setBrush(Theme::withAlpha(c.mist, 0.18));
-                p.drawRoundedRect(rowRect, 6, 6);
+                // Into this page: an outlined row, unlike a plain hover.
+                p.setBrush(Theme::withAlpha(c.mist, 0.14));
+                p.setPen(QPen(Theme::withAlpha(c.mist, 0.7), 1));
+                p.drawRoundedRect(QRectF(rowRect).adjusted(0.5, 0.5, -0.5, -0.5), 6, 6);
+                p.setPen(Qt::NoPen);
             } else {
                 const int y = m_dropMode < 0 ? r.y : r.y + r.h;
                 p.setBrush(c.mist);
@@ -319,6 +324,26 @@ void PageTree::paintEvent(QPaintEvent *e)
         const double x = chev.left() + 29;
         p.drawText(QRectF(x, r.y, right - x, r.h), Qt::AlignVCenter | Qt::AlignLeft,
                    QFontMetricsF(p.font()).elidedText(r.title, Qt::ElideRight, right - x));
+        p.setOpacity(1.0);
+    }
+    // The dragged page follows the pointer as a small ghost.
+    if (m_dragging && m_pressRow >= 0 && m_pressRow < m_rows.size()) {
+        const Row &dr = m_rows[m_pressRow];
+        const PageMeta *dm = ws->page(dr.id);
+        p.setFont(Theme::uiFont(13, QFont::Medium));
+        const QString text = QFontMetricsF(p.font()).elidedText(dr.title, Qt::ElideRight, 150);
+        const double w = QFontMetricsF(p.font()).horizontalAdvance(text) + 40;
+        const QRectF ghostRect(qMin(m_dragPos.x() + 16.0, width() - w - 4), m_dragPos.y() + 10, w, 26);
+        p.setOpacity(0.92);
+        Theme::paintSoftShadow(p, ghostRect, 7, 6, 1.0);
+        p.setPen(QPen(c.ash, 1));
+        p.setBrush(c.graphite);
+        p.drawRoundedRect(ghostRect.adjusted(0.5, 0.5, -0.5, -0.5), 7, 7);
+        Icons::paintPageIcon(p, QRectF(ghostRect.left() + 8, ghostRect.center().y() - 8, 16, 16), dm ? dm->icon : QString(), c.mist,
+                             dm && dm->isDatabase() ? QStringLiteral("database") : QStringLiteral("page"));
+        p.setPen(c.starlight);
+        p.drawText(ghostRect.adjusted(30, 0, -8, 0), Qt::AlignVCenter, text);
+        p.setOpacity(1.0);
     }
 }
 
@@ -329,6 +354,7 @@ void PageTree::mouseMoveEvent(QMouseEvent *e)
         if (!m_dragging && (pos - m_pressPos).manhattanLength() > 6)
             m_dragging = true;
         if (m_dragging) {
+            m_dragPos = pos;
             const int i = rowAt(pos.y());
             m_dropRow = -1;
             if (i >= 0 && m_rows[i].kind == Row::Page && !m_rows[i].favorites) {
