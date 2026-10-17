@@ -857,6 +857,18 @@ void BlockEditor::showLanguageMenu(int blockNumber, const QPoint &globalPos)
     menu->popup(globalPos);
 }
 
+void BlockEditor::viewImageFullScreen(int blockNumber)
+{
+    const QTextBlock blk = document()->findBlockByNumber(blockNumber);
+    if (!m_ws || !blk.isValid())
+        return;
+    const Block props = blockProps(blk);
+    QString cap;
+    for (const Span &sp : props.caption)
+        cap += sp.text;
+    new ImageViewer(window(), m_ws->mediaPath(props.media), cap);
+}
+
 void BlockEditor::showBlockMenu(int blockNumber, const QPoint &globalPos)
 {
     QTextBlock blk = document()->findBlockByNumber(blockNumber);
@@ -923,14 +935,7 @@ void BlockEditor::showBlockMenu(int blockNumber, const QPoint &globalPos)
         connect(full, &QAction::toggled, this, [this, blockNumber](bool on) {
             setBlockData(blockNumber, [&](Block &p) { p.align = on ? QStringLiteral("full") : QString(); });
         });
-        menu->addAction(Icons::icon(QStringLiteral("fullscreen")), tr("View full screen"), this, [this, props] {
-            if (m_ws) {
-                QString cap;
-                for (const Span &sp : props.caption)
-                    cap += sp.text;
-                new ImageViewer(window(), m_ws->mediaPath(props.media), cap);
-            }
-        });
+        menu->addAction(Icons::icon(QStringLiteral("fullscreen")), tr("View full screen"), this, [this, blockNumber] { viewImageFullScreen(blockNumber); });
         menu->addAction(Icons::icon(QStringLiteral("upload")), tr("Replace…"), this, [this, blockNumber] {
             const QString path = QFileDialog::getOpenFileName(this, tr("Replace image"), QString(),
                                                               tr("Images (*.png *.jpg *.jpeg *.gif *.webp *.bmp *.svg)"));

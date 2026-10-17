@@ -464,6 +464,33 @@ void BlockEditor::openObject(int blockNumber)
         QDesktopServices::openUrl(QUrl(b.url));
 }
 
+QList<QPair<QString, QRectF>> BlockEditor::imageTools(const QTextBlock &block) const
+{
+    QList<QPair<QString, QRectF>> tools;
+    const QRectF r = objectRect(block);
+    if (r.width() < 150 || r.height() < 60)
+        return tools;
+    const QStringList ids = isReadOnly() ? QStringList{QStringLiteral("fullscreen")}
+                                         : QStringList{QStringLiteral("caption"), QStringLiteral("fullscreen"), QStringLiteral("more")};
+    const double size = 26, gap = 2, pad = 3;
+    double x = r.right() - 8 - pad - ids.size() * size - (ids.size() - 1) * gap;
+    for (const QString &id : ids) {
+        tools.append({id, QRectF(x, r.top() + 8 + pad, size, size)});
+        x += size + gap;
+    }
+    return tools;
+}
+
+void BlockEditor::runImageTool(int blockNumber, const QString &tool, const QPoint &globalPos)
+{
+    if (tool == QLatin1String("caption"))
+        editCaption(blockNumber, objectPopupPos(document()->findBlockByNumber(blockNumber)));
+    else if (tool == QLatin1String("fullscreen"))
+        viewImageFullScreen(blockNumber);
+    else if (tool == QLatin1String("more"))
+        showBlockMenu(blockNumber, globalPos);
+}
+
 void BlockEditor::editCaption(int blockNumber, const QPoint &globalPos)
 {
     const QTextBlock blk = document()->findBlockByNumber(blockNumber);

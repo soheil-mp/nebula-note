@@ -257,7 +257,7 @@ private:
     // hit testing
     enum class Hit {
         None, Checkbox, ToggleArrow, Handle, Plus, CalloutIcon, CodeLanguage, CodeCopy, PageLink, Mention, Link, ImageEdge,
-        ColumnGap, TableAddRow, TableAddColumn, Object, InlineEquation, Date, CommentBubble, ToggleHint
+        ColumnGap, TableAddRow, TableAddColumn, Object, InlineEquation, Date, CommentBubble, ToggleHint, ImageTool
     };
     struct HitInfo {
         Hit hit = Hit::None;
@@ -292,6 +292,10 @@ private:
     void chooseFile(int blockNumber);
     void openObject(int blockNumber);
     void editCaption(int blockNumber, const QPoint &globalPos);
+    // The small toolbar on a hovered image: (action, rect) in viewport coordinates.
+    QList<QPair<QString, QRectF>> imageTools(const QTextBlock &block) const;
+    void runImageTool(int blockNumber, const QString &tool, const QPoint &globalPos);
+    void viewImageFullScreen(int blockNumber);
     void setBlockData(int blockNumber, const std::function<void(Block &)> &change);
     void updateEmbeds();
     void showPasteMenu(int blockNumber, const QString &url);
@@ -321,6 +325,7 @@ private:
     // hover / handles
     int m_hoverBlock = -1;
     Hit m_hoverHit = Hit::None;
+    int m_hoverImageTool = -1;
     QVariantAnimation m_handleFade;
 
     // block drag

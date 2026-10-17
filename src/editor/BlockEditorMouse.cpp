@@ -98,6 +98,18 @@ BlockEditor::HitInfo BlockEditor::hitTest(const QPoint &pos) const
         return h;
     }
 
+    // The toolbar on a hovered image.
+    if (t == BlockType::Image && (m_ctx.hoveredImage >= 0 || m_hoverImageTool >= 0) && document()->findBlock(qMax(0, m_ctx.hoveredImage)) == blk) {
+        const auto tools = imageTools(blk);
+        for (int i = 0; i < tools.size(); ++i)
+            if (tools[i].second.adjusted(-1, -1, 1, 1).contains(pos)) {
+                h.hit = Hit::ImageTool;
+                h.part = i;
+                h.position = blk.position() + qMax(0, int(blk.text().indexOf(QChar::ObjectReplacementCharacter)));
+                return h;
+            }
+    }
+
     // The comment bubble at the right edge.
     if (m_openComments.value(idOf(blk)) > 0 && commentBubbleRect(blk).adjusted(-4, -4, 4, 4).contains(pos)) {
         h.hit = Hit::CommentBubble;
@@ -296,6 +308,12 @@ void BlockEditor::mousePressEvent(QMouseEvent *e)
             child.depth = depthOf(blk) + 1;
             insertNewBlockAfter(blk, child);
         }
+        return;
+    }
+    case Hit::ImageTool: {
+        const auto tools = imageTools(blk);
+        if (h.part >= 0 && h.part < tools.size())
+            runImageTool(blk.blockNumber(), tools[h.part].first, viewport()->mapToGlobal(tools[h.part].second.bottomLeft().toPoint() + QPoint(0, 6)));
         return;
     }
     case Hit::ToggleHint: {
@@ -543,8 +561,10 @@ void BlockEditor::mouseMoveEvent(QMouseEvent *e)
             m_handleFade.stop();
             m_handleFade.start();
         }
-        if (h.hit != m_hoverHit) {
+        const int tool = h.hit == Hit::ImageTool ? h.part : -1;
+        if (h.hit != m_hoverHit || tool != m_hoverImageTool) {
             m_hoverHit = h.hit;
+            m_hoverImageTool = tool;
             viewport()->update();
         }
         const ColumnGap gap = h.hit == Hit::ColumnGap ? columnGapAt(pos) : ColumnGap{};
@@ -595,6 +615,7 @@ void BlockEditor::mouseMoveEvent(QMouseEvent *e)
         case Hit::Date:
         case Hit::CommentBubble:
         case Hit::ToggleHint:
+        case Hit::ImageTool:
             shape = Qt::PointingHandCursor;
             break;
         case Hit::Object: {
@@ -626,7 +647,11 @@ void BlockEditor::mouseMoveEvent(QMouseEvent *e)
         }
         if (viewport()->cursor().shape() != shape)
             viewport()->setCursor(shape);
-        if (h.hit == Hit::Link)
+        if (h.hit == Hit::ImageTool) {
+            const auto tools = imageTools(doc->findBlockByNumber(h.block));
+            const QString id = h.part >= 0 && h.part < tools.size() ? tools[h.part].first : QString();
+            setToolTip(id == QLatin1String("caption") ? tr("Caption") : id == QLatin1String("fullscreen") ? tr("View full screen") : tr("More"));
+        } else if (h.hit == Hit::Link)
             setToolTip(tr("Ctrl+click to open %1").arg(h.href));
         else if (h.hit == Hit::Handle)
             setToolTip(tr("Drag to move · Click for options"));
@@ -694,6 +719,7 @@ void BlockEditor::leaveEvent(QEvent *e)
 {
     m_hoverBlock = -1;
     m_hoverHit = Hit::None;
+    m_hoverImageTool = -1;
     m_hoverGap = ColumnGap{};
     m_hoverTable = nullptr;
     m_ctx.hoveredObject = -1;

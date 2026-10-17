@@ -544,5 +544,23 @@ void BlockEditor::paintEvent(QPaintEvent *e)
             }
         }
     }
+    // The toolbar on a hovered image (also shown read-only, for full screen).
+    if (m_ctx.hoveredImage >= 0) {
+        const QTextBlock blk = doc->findBlock(m_ctx.hoveredImage);
+        const auto tools = blk.isValid() && blk.isVisible() && typeOf(blk) == BlockType::Image ? imageTools(blk) : QList<QPair<QString, QRectF>>();
+        if (!tools.isEmpty()) {
+            const QRectF bar = tools.first().second.united(tools.last().second).adjusted(-3, -3, 3, 3);
+            p.setPen(QPen(Theme::withAlpha(QColor(255, 255, 255), 0.1), 1));
+            p.setBrush(QColor(0x17, 0x17, 0x1B, 235));
+            p.drawRoundedRect(bar.adjusted(0.5, 0.5, -0.5, -0.5), 8, 8);
+            for (int i = 0; i < tools.size(); ++i) {
+                const bool hot = i == m_hoverImageTool;
+                if (hot)
+                    Theme::paintHover(p, tools[i].second, 1.6, 6);
+                const QString icon = tools[i].first == QLatin1String("more") ? QStringLiteral("more") : tools[i].first;
+                Icons::paint(p, tools[i].second.adjusted(5, 5, -5, -5), icon, hot ? c.starlight : c.moon);
+            }
+        }
+    }
 }
 
