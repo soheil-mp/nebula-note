@@ -71,6 +71,12 @@ void TabStrip::paintEvent(QPaintEvent *)
         } else if (hover) {
             Theme::paintHover(p, r, 0.9, 7);
         }
+        // A faint divider between two quiet tabs, as browsers draw them.
+        if (i + 1 < m_tabs.size() && !current && i + 1 != m_current && !hover && i + 1 != m_hover) {
+            p.setPen(QPen(c.ash, 1));
+            const double x = (r.right() + m_rects[i + 1].left()) / 2.0 + 0.5;
+            p.drawLine(QPointF(x, r.center().y() - 7), QPointF(x, r.center().y() + 7));
+        }
         Icons::paintPageIcon(p, QRectF(r.left() + 9, r.center().y() - 8, 16, 16), m_tabs[i].icon, current ? c.starlight : c.mist,
                              QStringLiteral("page"));
         const int right = (hover || current) ? closeRect(i).left() - 4 : r.right() - 8;
