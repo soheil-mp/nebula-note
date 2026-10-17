@@ -602,6 +602,13 @@ void DatabaseBody::relayout()
         m_openFull->setVisible(true);
         y += kTitleH;
     }
+    // Narrow databases (in a column) keep room for their tabs: search moves
+    // out of the toolbar, New shows just its icon and templates hide.
+    const bool compact = colW < 460;
+    const bool form = currentView().type == ViewType::Form;
+    m_searchBtn->setVisible(!compact && !form);
+    m_newMenuBtn->setVisible(!compact);
+    m_newBtn->setText(compact ? QString() : tr("New"));
     m_tabsBar->setGeometry(m_left - 8, y, colW + 8, kBarH);
     m_bulkBar->setGeometry(m_left - 4, y, colW + 4, kBarH);
     y += kBarH + 2;

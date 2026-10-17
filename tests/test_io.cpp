@@ -590,6 +590,12 @@ private slots:
         QVERIFY(ws.page(db) && ws.page(db)->isDatabase());
         QCOMPARE(ws.title(db), QStringLiteral("Progress"));
         QCOMPARE(ws.page(db)->parentId, r.rootId);
+        QVERIFY(!b[2].columns[1].first().data.contains(QStringLiteral("notionVisible")));
+        // The Notion view showed only Name: the other properties start hidden.
+        const Schema schema = ws.schema(db);
+        QCOMPARE(schema.props.size(), 3);
+        QCOMPARE(schema.views.first().hidden.size(), 2);
+        QCOMPARE(schema.orderedProps(schema.views.first()).size(), 1);
         // To-dos keep their state and nesting; Notion's colour classes become shades.
         QVERIFY(b[3].checked);
         QVERIFY(!b[4].checked);

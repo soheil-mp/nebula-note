@@ -11,6 +11,9 @@
 #include <QJsonDocument>
 #include <QScrollBar>
 #include <QTextBlock>
+#include <QTextCursor>
+
+#include <cmath>
 
 using namespace BlockFormat;
 using namespace BlockEditorPrivate;
@@ -104,12 +107,14 @@ void BlockEditor::updateEmbeds()
             body->hide();
             continue;
         }
-        // The body reaches from the grip gutter to the editor's right edge, so
-        // wide views scroll sideways across the page like Notion's.
+        // On the page, the body reaches from the grip gutter to the editor's
+        // right edge, so wide views scroll sideways across the page like
+        // Notion's. Inside a column it stays within the column and scrolls there.
+        const bool inColumn = QTextCursor(b).currentTable() != nullptr;
         const int left = qMax(0, int(r.left()) - kGrips);
-        const int right = viewport()->width() - 4;
+        const int right = inColumn ? int(std::ceil(r.right())) : viewport()->width() - 4;
         body->setColumn(int(r.left()) - left, int(r.width()));
-        body->setGeometry(left, int(r.top()), qMax(200, right - left), body->height());
+        body->setGeometry(left, int(r.top()), qMax(inColumn ? 120 : 200, right - left), body->height());
         body->show();
         if (m_ctx.embedHeights.value(id) != body->height()) {
             m_ctx.embedHeights.insert(id, body->height());

@@ -934,8 +934,8 @@ private slots:
         pic.media = media;
         Block cols;
         cols.type = BlockType::ColumnList;
-        cols.widths = {0.3, 0.7};
-        cols.columns = {{pic}, {db, Block::make(BlockType::Todo, QStringLiteral("after"))}};
+        cols.widths = {0.6, 0.4};
+        cols.columns = {{db, Block::make(BlockType::Todo, QStringLiteral("after"))}, {pic}};
         const QString page = m_ws->createPage({}, QStringLiteral("Columns host"), {Block::make(BlockType::Heading1, QStringLiteral("Top")), cols});
         QScrollArea area;
         area.resize(1100, 900);
@@ -950,8 +950,10 @@ private slots:
         }
         DatabaseBody *body = ed->embedFor(db.id);
         QVERIFY(body && body->isVisible());
-        // It sits in the wide column, not across the page.
-        QVERIFY(body->geometry().left() > ed->width() / 4);
+        // It stays inside its column instead of running across the page.
+        QVERIFY(body->geometry().left() < ed->width() / 4);
+        QVERIFY(body->geometry().right() < int(ed->width() * 0.7));
+        QVERIFY(body->geometry().width() > ed->width() / 3);
         m_ws->deleteForever(page);
     }
 

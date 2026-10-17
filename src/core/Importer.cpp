@@ -12,6 +12,7 @@
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonArray>
 #include <QImage>
 #include <QSet>
 #include <QMap>
@@ -597,7 +598,34 @@ Result importPath(Workspace &ws, const QString &path, const QString &parentId)
             };
             if (item->html) {
                 HtmlImport::PageInfo info;
-                const QList<Block> blocks = HtmlImport::toBlocks(md, opt, &title, &info);
+                QList<Block> blocks = HtmlImport::toBlocks(md, opt, &title, &info);
+                // Inline databases show the properties the Notion view showed.
+                std::function<void(QList<Block> &)> applyViews = [&](QList<Block> &list) {
+                    for (Block &b : list) {
+                        for (QList<Block> &col : b.columns)
+                            applyViews(col);
+                        if (b.type != BlockType::Database || !b.data.contains(QStringLiteral("notionVisible")))
+                            continue;
+                        QStringList names;
+                        for (const QJsonValue &v : b.data.take(QStringLiteral("notionVisible")).toArray())
+                            names.append(v.toString());
+                        Schema schema = ws.schema(b.pageId);
+                        if (schema.views.isEmpty())
+                            continue;
+                        View &view = schema.views.first();
+                        view.hidden.clear();
+                        view.order.clear();
+                        for (const QString &name : names)
+                            for (const Property &p : schema.props)
+                                if (p.name == name && !view.order.contains(p.id))
+                                    view.order.append(p.id);
+                        for (const Property &p : schema.props)
+                            if (p.type != PropType::Title && !view.order.contains(p.id))
+                                view.hidden.append(p.id);
+                        ws.setSchema(b.pageId, schema);
+                    }
+                };
+                applyViews(blocks);
                 if (!title.isEmpty() && title != item->title)
                     ws.setTitle(item->id, title);
                 ws.setContent(item->id, blocks);

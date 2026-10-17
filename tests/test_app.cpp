@@ -338,8 +338,11 @@ private slots:
 
     void quickFindFiltersAndSorts()
     {
+        // Created a few milliseconds apart, so "newest first" has no ties.
         const QString parent = m_ws->createPage({}, QStringLiteral("Comet archive"));
+        settle(5);
         const QString a = m_ws->createPage(parent, QStringLiteral("Comet Halley"), {Block::make(BlockType::Paragraph, QStringLiteral("periodic"))});
+        settle(5);
         const QString b = m_ws->createPage({}, QStringLiteral("Notes"), {Block::make(BlockType::Paragraph, QStringLiteral("a comet passed by"))});
         settle();
         auto *qf = new QuickFind(m_win);

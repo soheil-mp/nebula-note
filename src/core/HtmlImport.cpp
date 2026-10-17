@@ -6,6 +6,7 @@
 #include <QDateTime>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonArray>
 #include <QRegularExpression>
 #include <QSet>
 #include <QTimeZone>
@@ -771,6 +772,21 @@ private:
                 b.type = BlockType::Database;
                 b.depth = depth;
                 b.pageId = db;
+                // The exported table lists the view's visible properties, in order.
+                if (const Node *head = findDescendant(c, [](const Node *x) { return x->tag == QLatin1String("thead"); })) {
+                    QJsonArray visible;
+                    std::function<void(const Node *)> collect = [&](const Node *n) {
+                        for (const Node *k : n->children) {
+                            if (k->tag == QLatin1String("th"))
+                                visible.append(textContent(k).simplified());
+                            else if (!k->isText())
+                                collect(k);
+                        }
+                    };
+                    collect(head);
+                    if (!visible.isEmpty())
+                        b.data.insert(QStringLiteral("notionVisible"), visible);
+                }
                 m_out.append(b);
                 return;
             }
