@@ -443,6 +443,17 @@ void BlockEditor::normalize()
             applyBlockProps(bc.block(), props, s);
         }
     }
+    // Qt ignores the first block's top margin: room for a box around it
+    // (code, callout) goes in the page frame's own top margin.
+    {
+        const QTextBlock first = doc->firstBlock();
+        const double want = 2 + (first.isValid() && !DocumentIO::tableOf(first) ? padTop(typeOf(first), s) : 0);
+        QTextFrameFormat ff = doc->rootFrame()->frameFormat();
+        if (qAbs(ff.topMargin() - want) > 0.5) {
+            ff.setTopMargin(want);
+            doc->rootFrame()->setFrameFormat(ff);
+        }
+    }
     c.endEditBlock();
     m_loading = wasLoading;
     updateVisibility();

@@ -21,6 +21,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTextBlock>
+#include <QTextFrame>
 #include <QTextTable>
 
 using namespace BlockFormat;
@@ -770,6 +771,24 @@ private slots:
         m_ed->insertFromMimeData(&mime);
         QCOMPARE(saved().first().spans.first().mention, target);
         QCOMPARE(saved().first().spans.first().mentionBlock, blockId);
+    }
+
+    void firstBoxedBlockStaysInside()
+    {
+        // Qt drops the first block's top margin; a code box there would poke
+        // above the editor without room in the page frame.
+        Block code = Block::make(BlockType::Code, QStringLiteral("int x;"));
+        code.language = QStringLiteral("cpp");
+        fresh({code, para(QStringLiteral("After"))});
+        QTest::qWait(30);
+        const double frameTop = m_ed->document()->rootFrame()->frameFormat().topMargin();
+        QVERIFY(frameTop >= padTop(BlockType::Code, m_ed->style()));
+        const QRectF r = m_ed->document()->documentLayout()->blockBoundingRect(block(0));
+        QVERIFY(r.top() - padTop(BlockType::Code, m_ed->style()) >= 0);
+        // A plain first paragraph needs none.
+        fresh({para(QStringLiteral("Plain"))});
+        QTest::qWait(30);
+        QVERIFY(m_ed->document()->rootFrame()->frameFormat().topMargin() < 4);
     }
 
     void emptyToggleOffersAFirstChild()

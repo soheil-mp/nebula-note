@@ -227,7 +227,8 @@ void layout(Graph &g, double px, double maxWidth)
         if (e.label.isEmpty())
             continue;
         const int l = qMin(g.nodes[e.from].layer, g.nodes[e.to].layer);
-        const double need = (g.vertical ? fm.height() + px * 0.4 : fm.horizontalAdvance(e.label) + px * 0.8) + px * 2.6;
+        // Vertical flows stack the label between two stretches of curve.
+        const double need = g.vertical ? fm.height() * 2 + px * 3.2 : fm.horizontalAdvance(e.label) + px * 3.4;
         gapAfter[l] = qMax(gapAfter[l], need);
     }
     const double gapCross = px * 2.0;
