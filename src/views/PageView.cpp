@@ -381,6 +381,9 @@ PageView::PageView(QWidget *parent)
     m_findCount = new QLabel;
     m_findCount->setFont(Theme::uiFont(12));
     m_findCount->setStyleSheet(QStringLiteral("color: #8a8a94; padding: 0 6px;"));
+    // Room for the longest count, so the bar doesn't change size as you type.
+    m_findCount->setFixedWidth(int(QFontMetricsF(m_findCount->font()).horizontalAdvance(tr("No matches"))) + 14);
+    m_findCount->setAlignment(Qt::AlignCenter);
     auto *prev = new FlatButton(QStringLiteral("chevron-up"));
     auto *next = new FlatButton(QStringLiteral("chevron-down"));
     auto *close = new FlatButton(QStringLiteral("close"));
