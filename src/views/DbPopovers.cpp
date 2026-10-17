@@ -1015,20 +1015,9 @@ private:
         for (const Property *p : s.orderedProps(v, true)) {
             if (p->type == PropType::Title)
                 continue;
-            auto *row = new QHBoxLayout;
-            auto *icon = new QLabel;
-            icon->setPixmap(Icons::pixmap(propTypeIcon(p->type), 16, Theme::colors().fog, devicePixelRatioF()));
-            auto *nameLabel = new QLabel(p->name);
-            nameLabel->setFont(Theme::uiFont(13.5));
-            nameLabel->setStyleSheet(QStringLiteral("color: #c9c9d0;"));
-            auto *sw = new Switch;
-            sw->setChecked(!v.hidden.contains(p->id));
-            row->addWidget(icon);
-            row->addWidget(nameLabel, 1);
-            row->addWidget(sw);
-            m_layout->addLayout(row);
+            // Rows like the rest of the menu; a click anywhere on one flips it.
             const QString id = p->id;
-            QObject::connect(sw, &Switch::toggled, this, [this, id](bool on) {
+            toggle(propTypeIcon(p->type), p->name, !v.hidden.contains(p->id), [this, id](bool on) {
                 edit([&](View &v) {
                     v.hidden.removeAll(id);
                     if (!on)
