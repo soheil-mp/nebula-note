@@ -773,6 +773,34 @@ private slots:
         QCOMPARE(saved().first().spans.first().mentionBlock, blockId);
     }
 
+    void hoveredImageShowsItsToolbar()
+    {
+        // A real picture, so the image has a size.
+        QImage pic(400, 240, QImage::Format_RGB32);
+        pic.fill(QColor(40, 40, 46));
+        const QString file = m_dir.filePath(QStringLiteral("toolbar.png"));
+        QVERIFY(pic.save(file));
+        Block img;
+        img.type = BlockType::Image;
+        img.media = m_ws->importMedia(file);
+        fresh({para(QStringLiteral("Above")), img});
+        QTest::qWait(30);
+        const QTextBlock b = block(1);
+        QCOMPARE(typeOf(b), BlockType::Image);
+        const QRectF r = m_ed->objectRect(b);
+        QVERIFY(r.width() > 150);
+        // Hover the picture, then its first tool: a caption editor.
+        QTest::mouseMove(m_ed->viewport(), r.center().toPoint());
+        settle();
+        const auto tools = m_ed->imageTools(b);
+        QCOMPARE(tools.size(), 3);
+        QCOMPARE(tools.first().first, QStringLiteral("caption"));
+        QVERIFY(r.contains(tools.last().second));
+        const auto h = m_ed->hitTest(tools[1].second.center().toPoint());
+        QCOMPARE(int(h.hit), int(BlockEditor::Hit::ImageTool));
+        QCOMPARE(h.part, 1);
+    }
+
     void firstBoxedBlockStaysInside()
     {
         // Qt drops the first block's top margin; a code box there would poke
