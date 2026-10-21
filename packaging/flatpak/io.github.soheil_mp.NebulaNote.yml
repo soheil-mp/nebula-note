@@ -1,0 +1,43 @@
+# Flatpak build of Nebula Note.
+#
+#   flatpak install flathub org.kde.Sdk//6.10 io.qt.qtwebengine.BaseApp//6.10 org.flatpak.Builder
+#   flatpak run org.flatpak.Builder --user --install --force-clean build-flatpak \
+#       packaging/flatpak/io.github.soheil_mp.NebulaNote.yml
+#   flatpak run io.github.soheil_mp.NebulaNote
+#
+# The KDE runtime brings Qt and KWindowSystem; the Qt WebEngine base app
+# brings the browser engine the video player plugin uses.
+app-id: io.github.soheil_mp.NebulaNote
+runtime: org.kde.Platform
+runtime-version: '6.10'
+sdk: org.kde.Sdk
+base: io.qt.qtwebengine.BaseApp
+base-version: '6.10'
+command: nebula-note
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Link previews, video embeds, importing pictures from the web.
+  - --share=network
+  # Reminders.
+  - --talk-name=org.freedesktop.Notifications
+  # Blurred sidebar under KWin.
+  - --talk-name=org.kde.KWin
+  # Files go through the file chooser portal; nothing else on disk is needed.
+cleanup-commands:
+  - /app/cleanup-BaseApp.sh
+modules:
+  - name: nebula-note
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - build
+          - build-release
+          - build-flatpak
+          - .flatpak-builder

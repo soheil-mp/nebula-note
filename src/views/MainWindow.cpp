@@ -17,6 +17,7 @@
 #include "core/Settings.h"
 #include "core/Workspace.h"
 #include "editor/BlockEditor.h"
+#include "platform/Notifications.h"
 #include "platform/WindowEffects.h"
 #include "ui/Icons.h"
 #include "ui/Theme.h"
@@ -38,7 +39,6 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
-#include <QProcess>
 #include <QShortcut>
 #include <QScrollBar>
 #include <QStackedWidget>
@@ -276,10 +276,7 @@ void MainWindow::checkReminders()
             if (currentPage() == page)
                 m_page->revealBlock(block);
         });
-        const QString notifier = QStandardPaths::findExecutable(QStringLiteral("notify-send"));
-        if (!notifier.isEmpty() && !qEnvironmentVariableIsSet("NEBULA_NO_NOTIFY"))
-            QProcess::startDetached(notifier, {QStringLiteral("--app-name=Nebula Note"), QStringLiteral("--icon=" NEBULA_APP_ID),
-                                               QStringLiteral("Reminder"), text});
+        Notifications::show(tr("Reminder"), text);
     }
 }
 

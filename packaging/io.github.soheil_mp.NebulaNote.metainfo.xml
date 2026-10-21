@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.soheil_mp.NebulaNote</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <name>Nebula Note</name>
+  <summary>Notes, docs and databases in deep space</summary>
+  <developer id="io.github.soheil_mp">
+    <name>Soheil</name>
+  </developer>
+  <description>
+    <p>
+      Nebula Note is a fast, local workspace for notes, documents and databases, in the spirit of Notion.
+      Everything lives in one file on your computer: no account, no server.
+    </p>
+    <ul>
+      <li>A block editor with headings, lists, to-dos, toggles, callouts, code, equations, tables, columns and synced blocks</li>
+      <li>Databases with table, board, list, calendar, timeline, gallery and chart views, formulas, relations and rollups</li>
+      <li>Full-text search, version history, comments, reminders and backlinks</li>
+      <li>Import from Notion, Markdown, HTML, Word, Evernote and CSV; export to Markdown, HTML and PDF</li>
+      <li>Daily backups with an integrity check, to any folder you choose</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.soheil_mp.NebulaNote.desktop</launchable>
+  <url type="homepage">https://github.com/soheil-mp/nebula-note</url>
+  <url type="bugtracker">https://github.com/soheil-mp/nebula-note/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>A page with blocks</caption>
+      <image>https://raw.githubusercontent.com/soheil-mp/nebula-note/main/docs/screenshots/blocks.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A database as a board</caption>
+      <image>https://raw.githubusercontent.com/soheil-mp/nebula-note/main/docs/screenshots/board.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Home</caption>
+      <image>https://raw.githubusercontent.com/soheil-mp/nebula-note/main/docs/screenshots/home.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <categories>
+    <category>Office</category>
+  </categories>
+  <keywords>
+    <keyword>notes</keyword>
+    <keyword>wiki</keyword>
+    <keyword>database</keyword>
+    <keyword>markdown</keyword>
+    <keyword>notion</keyword>
+  </keywords>
+  <releases>
+    <release version="1.2.0" date="2026-10-21">
+      <description>
+        <p>Much faster with long pages and big databases, a new storage format with full-text search and compressed history, background backups with integrity checks, safer links, and screen reader and keyboard support.</p>
+      </description>
+    </release>
+    <release version="1.1.0" date="2026-10-17"/>
+  </releases>
+</component>

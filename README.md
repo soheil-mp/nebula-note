@@ -43,11 +43,15 @@ entry; your workspace stays where it was.
 Build dependencies on Ubuntu/Debian:
 `cmake ninja-build g++ qt6-base-dev qt6-svg-dev zlib1g-dev` and optionally
 `libkf6windowsystem-dev` for native KWin shadows and blur behind the sidebar.
-YouTube and Vimeo videos play inside pages with Qt WebEngine
-(`qt6-webengine-dev`); when only its libraries are installed, `install.sh`
-fetches the headers into `~/.cache/nebula-note` (no root needed). Without
-WebEngine, video embeds show their thumbnail and open in the browser.
-Spell check uses Hunspell dictionaries when they are installed (`hunspell-en-us`).
+YouTube and Vimeo videos play inside pages through a small plugin built on
+Qt WebEngine (`qt6-webengine-dev`), loaded only when a video plays; when only
+its libraries are installed, `install.sh` fetches the headers into
+`~/.cache/nebula-note` (no root needed). Without it, video embeds show their
+thumbnail and open in the browser. Spell check uses Hunspell dictionaries when
+they are installed (`hunspell-en-us`).
+
+**Flatpak**: `packaging/flatpak/io.github.soheil_mp.NebulaNote.yml` builds it
+on the KDE runtime (the steps are at the top of the file).
 
 ## Writing
 
@@ -120,9 +124,11 @@ Spell check uses Hunspell dictionaries when they are installed (`hunspell-en-us`
 ## Finding your way
 
 - **Sidebar** with Favorites and the page tree (drag to reorder or nest;
-  databases list their views).
-- **Quick Find** (Ctrl+P / Ctrl+K): fuzzy titles and page text, with Notion's
-  filters — title only, in a page, edited/created date — and sorts.
+  databases list their views). **F6** moves the keyboard into it and back:
+  arrows, Right/Left to expand and collapse, Enter to open, F2 to rename.
+- **Quick Find** (Ctrl+P / Ctrl+K): fuzzy titles and full-text search of every
+  page (any part of a word, accents ignored, ranked), with Notion's filters —
+  title only, in a page, edited/created date — and sorts.
 - **Reminders** (`@remind friday 9am`) pop up as notifications when they come due.
 - **Home**: recent pages, quick starts, everything dated in the next two weeks
   and a month calendar marking the days that have something on them.
@@ -132,9 +138,24 @@ Spell check uses Hunspell dictionaries when they are installed (`hunspell-en-us`
 ## Your data
 
 Your workspace is a single SQLite file, `~/.local/share/nebula/workspace.db`,
-with media in `media/` beside it. Nothing leaves your computer except link
-previews you ask for. Edits save automatically; a copy is made once a day into
-`backups/` (the last seven are kept), and deleted pages wait in the **Trash**.
+with media in `media/` beside it. Pages are stored block by block, so saving
+writes only what changed; search uses a full-text index, and version history
+is compressed. Edits save automatically, and deleted pages wait in the
+**Trash**; *Delete forever* removes the page's history, comments and search text
+too.
+
+- **Backups**: a copy is made once a day in the background (the last seven are
+  kept) after checking the file's integrity — a damaged file gets no new copy
+  and keeps every old one. Choose another folder (another disk, a synced
+  folder) in Settings > Workspace & data. Upgrading to a new storage format
+  makes a copy first (`backups/workspace-before-format-N.db`).
+- **Unused files**: images and files no page, row, cover or saved version uses
+  are set aside in `media-trash/` and deleted after 30 days (or at once from
+  Settings).
+- **Privacy**: nothing leaves your computer except link previews, and those
+  can be turned off (Settings > Appearance > Link previews). Links in pages open
+  straight away only for the web, email and phone; a file or another app asks
+  first. Embedded videos run in a private session that keeps no cookies.
 
 - **Import**: Notion exports (*Markdown & CSV* or *HTML*, zipped or not — pages,
   sub-pages, callouts with their content, columns with their widths, inline
@@ -172,6 +193,7 @@ previews you ask for. Edits save automatically; a copy is made once a day into
 | Ctrl+Shift+↑ / ↓ | Move the block |
 | Ctrl+Enter | Check a to-do, open a toggle, open a page link |
 | Ctrl+Alt+T | Expand or collapse every toggle |
+| F6 / Shift+F6 | Move between the sidebar and the page |
 
 ## Building and testing
 
@@ -185,7 +207,9 @@ Seven suites run offscreen:
 - `nebula_tests`: block model, Markdown, CSV type inference, filters and sorts,
   the workspace, zip reading, Notion and Obsidian import, exports.
 - `nebula_db_tests`: formulas, relations and rollups, groups, sub-items,
-  templates, reminders, comments, versions, synced blocks.
+  templates, reminders, comments, versions, synced blocks; block storage,
+  full-text search, upgrading an old workspace file, *Delete forever*, clean-up,
+  backups (rotation, damaged files) and setting aside unused media.
 - `nebula_io_tests`: Markdown round trips of the rich blocks, HTML (and Notion
   HTML export) import, Word and Evernote import, HTML/PDF export.
 - `nebula_editor_tests` and `nebula_blocks_tests`: Markdown shortcuts,
@@ -198,7 +222,16 @@ Seven suites run offscreen:
   more, inline databases in pages and the row peek.
 - `nebula_app_tests`: the real window — every page and view, trash, overlays,
   version history, the page menu and customisation, reminders, search filters,
-  views in the sidebar, tabs, new windows, saving on close.
+  views in the sidebar, tabs, new windows, saving on close, and what screen
+  readers and the keyboard reach (the sidebar tree, controls, database rows).
+
+## Accessibility
+
+Screen readers (Orca and others, through Qt's accessibility support) see the
+sidebar as a tree, Quick Find's results as a list, tabs, segmented choices,
+Home's cards and calendar, and each database view's rows with their values;
+toasts are announced. Buttons, switches and menus work from the keyboard
+(Tab, Enter, arrows) and show a focus ring when reached by key.
 
 `docs/NOTION_PARITY.md` lists Notion's features one by one and how Nebula Note
 covers them; `docs/RESEARCH.md` describes the research and design decisions.

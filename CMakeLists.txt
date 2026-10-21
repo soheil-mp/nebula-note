@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(NebulaNote VERSION 1.1.0 DESCRIPTION "Nebula Note — notes, docs and databases in deep space" LANGUAGES CXX)
+project(NebulaNote VERSION 1.2.0 DESCRIPTION "Nebula Note — notes, docs and databases in deep space" LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -59,6 +59,13 @@ else()
     message(STATUS "Qt WebEngine not found: video embeds open in the browser (install qt6-webengine-dev to play them in pages)")
 endif()
 
+# Desktop notifications over D-Bus (also inside a Flatpak).
+find_package(Qt6 QUIET OPTIONAL_COMPONENTS DBus)
+if(Qt6DBus_FOUND)
+    target_link_libraries(nebula_ui PUBLIC Qt6::DBus)
+    target_compile_definitions(nebula_ui PRIVATE NEBULA_HAVE_DBUS)
+endif()
+
 if(KF6WindowSystem_FOUND)
     message(STATUS "KF6WindowSystem found: native KWin shadows and blur enabled")
     target_link_libraries(nebula_ui PUBLIC KF6::WindowSystem)
@@ -88,6 +95,10 @@ qt_add_resources(nebula-note "nebula_assets"
     FILES ${NEBULA_FONTS} ${NEBULA_UI_IMAGES} resources/icons/app/nebula.svg)
 
 install(TARGETS nebula-note RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+# Menu entry and software-center metadata (install.sh writes its own entry
+# with the absolute path; Flatpak and packages use these).
+install(FILES packaging/io.github.soheil_mp.NebulaNote.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES packaging/io.github.soheil_mp.NebulaNote.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
 install(FILES resources/icons/app/nebula.svg
     DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
     RENAME ${NEBULA_APP_ID}.svg)

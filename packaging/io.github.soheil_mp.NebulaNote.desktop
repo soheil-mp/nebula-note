@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Nebula Note
+GenericName=Notes & Workspace
+Comment=Notes, docs and databases in deep space
+Exec=nebula-note %F
+Icon=io.github.soheil_mp.NebulaNote
+Terminal=false
+StartupNotify=true
+StartupWMClass=io.github.soheil_mp.NebulaNote
+Categories=Office;Qt;
+Keywords=notes;notion;wiki;database;kanban;markdown;journal;todo;docs;
+MimeType=text/markdown;text/html;text/csv;application/zip;

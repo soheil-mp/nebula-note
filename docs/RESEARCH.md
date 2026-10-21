@@ -56,25 +56,54 @@ Three details from the engineering post shaped Nebula's model:
    in a JSON object keyed by property id.
 
 Storage is a single SQLite file (`~/.local/share/nebula/workspace.db`, WAL
-mode):
+mode). Its format is versioned (`PRAGMA user_version`, currently 2) and
+upgrades itself step by step, each step in one transaction after a backup:
 
 ```
-pages(id, parent_id, kind[page|database|row], title, icon, cover, cover_pos,
-      content JSON, plain, props JSON, schema JSON, options JSON,
-      sort, favorite, created, updated, visited, trashed)
-links(src, dst)              -- page mentions and sub-page links, for backlinks
-meta(key, value)             -- schema version, workspace name, …
+pages(id, parent_id, kind[page|database|row|template], title, icon, cover,
+      cover_pos, props JSON, schema JSON, options JSON, sort, favorite,
+      created, updated, visited, trashed, rev)
+blocks(page_id, id, sort, data JSON)     -- a page's top-level blocks
+links(src, dst)                          -- mentions and sub-page links (backlinks)
+synced(id, origin, content JSON)         -- synced blocks' shared content
+synced_refs(sync_id, page_id)            -- which pages show a synced block
+search(body) + search_map(rowid, page_id) + search_dirty(page_id)
+                                         -- FTS5 trigram index of page text
+versions(id, page_id, created, title, content zlib, rev, name)
+comments, reminders, meta
 ```
 
-Page content is one JSON array per page rather than one row per block. A
-single user doesn't need block-level sync, and one row per page makes saving
-atomic and loading a single query. `plain` holds the page text for search. The
-`links` table is rebuilt on each save so backlinks are a single indexed query.
-Images are stored once, content-addressed, in `media/<sha1>.<ext>`.
+**Why SQLite.** It is what comparable local-first apps settled on: Notion's
+desktop and mobile apps cache in SQLite (and its browser app moved to WASM
+SQLite, 20% faster navigation), Joplin stores everything in it, and Logseq's
+database version replaced Markdown files with it. A folder of Markdown files
+(Obsidian) still needs an index for links, properties and search; key-value
+stores (LMDB, RocksDB) have no queries or full-text search; DuckDB is built for
+analytics, not many small writes. CRDTs (Yjs, Automerge, Loro) only matter for
+sync or collaboration, and are themselves usually persisted in a database.
+
+**Blocks, not one blob per page.** The first format kept a page as one JSON
+array: simple, but every autosave re-serialized and rewrote the whole page
+(40 ms for a 3,000-block page) and every version stored a full copy. Now a
+save compares the page with what is stored and writes only changed blocks;
+sort keys (fractional, renumbered when a gap runs out) keep the order through
+inserts and moves. A page revision (`rev`) tells version history whether
+anything changed without comparing texts.
+
+**Search.** A `LIKE '%…%'` scan read every page's text (~60 ms for a rare word
+in a 13,000-page workspace). The FTS5 trigram tokenizer keeps the same
+substring matching (any part of a word, CJK) from an index (well under 1 ms),
+with bm25 ranking when a term isn't on thousands of pages. Pages are indexed
+once editing pauses; the pending list lives in the file, so a crash or a backup
+taken in between catches up on the next open.
+
+Images are stored once, content-addressed, in `media/<sha1>.<ext>`; unused
+ones are set aside in `media-trash/` daily and deleted after 30 days.
 
 Saving is automatic: edits are debounced (~600 ms) and written in one
-transaction. A rolling daily backup (`VACUUM INTO`, keep 7) protects against
-mistakes, and the trash keeps deleted pages until it is emptied.
+transaction. A daily backup (`VACUUM INTO` on a worker thread, after
+`PRAGMA quick_check`, keep 7, any folder) protects against mistakes and broken
+disks, and the trash keeps deleted pages until it is emptied.
 
 ## 3. Editor architecture
 
@@ -202,7 +231,10 @@ binary, installs it under `~/.local` (program, icons, menu entry), and writes
 **`Nebula.desktop`** into the project folder. That is the single file icon you
 double-click to open the app. `--desktop` also puts a copy on the desktop.
 A second launch raises the running window instead of opening a second
-instance on the same database.
+instance on the same database. The video player is a plugin loaded the first
+time a video plays, so the app itself doesn't link Qt WebEngine (85 instead of
+133 libraries, ~40 MB less memory at start). A Flatpak manifest builds it on
+the KDE runtime with the Qt WebEngine base app.
 
 ## 8. Testing
 
