@@ -7,6 +7,7 @@
 #include "core/Workspace.h"
 #include "ui/Icons.h"
 #include "ui/DatePopover.h"
+#include "ui/Links.h"
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
 
@@ -646,8 +647,7 @@ public:
                 v->addWidget(open, 0, Qt::AlignLeft);
                 connect(open, &FlatButton::clicked, this, [this] {
                     const QString t = m_line->text().trimmed();
-                    QDesktopServices::openUrl(QUrl(m_type == PropType::Email ? QStringLiteral("mailto:") + t
-                                                                             : (t.contains(QLatin1String("://")) ? t : QStringLiteral("https://") + t)));
+                    Links::open(this, m_type == PropType::Email ? QStringLiteral("mailto:") + t : t);
                 });
             }
             QTimer::singleShot(0, m_line, [this] {
@@ -1017,11 +1017,11 @@ private:
             auto *open = new FlatButton(QStringLiteral("paperclip"), files[i].name);
             open->setTextSize(13.5);
             const FileRef f = files[i];
-            connect(open, &FlatButton::clicked, this, [f] {
+            connect(open, &FlatButton::clicked, this, [this, f] {
                 if (!f.media.isEmpty())
-                    QDesktopServices::openUrl(QUrl::fromLocalFile(Workspace::instance()->mediaPath(f.media)));
+                    Links::openMedia(Workspace::instance()->mediaPath(f.media));
                 else
-                    QDesktopServices::openUrl(QUrl(f.url));
+                    Links::open(this, f.url);
             });
             auto *remove = new FlatButton(QStringLiteral("close"));
             connect(remove, &FlatButton::clicked, this, [this, i] {
@@ -1177,10 +1177,7 @@ void runPropertyButton(QWidget *parent, const QString &dbId, const QString &rowI
                 ws->setProp(rowId, target, nv);
             });
         } else if (type == QLatin1String("url")) {
-            QString url = value;
-            if (!url.contains(QStringLiteral("://")))
-                url.prepend(QStringLiteral("https://"));
-            QDesktopServices::openUrl(QUrl(url));
+            Links::open(parent, value);
         } else if (type == QLatin1String("add") && ws->exists(target)) {
             ws->createRow(target, value);
         } else if (type == QLatin1String("page") && ws->exists(target)) {

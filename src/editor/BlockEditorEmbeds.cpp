@@ -7,6 +7,7 @@
 
 #include "core/MediaLinks.h"
 #include "core/Workspace.h"
+#include "ui/Links.h"
 #include "ui/WebPlayer.h"
 #include "views/DatabaseBody.h"
 
@@ -142,8 +143,12 @@ void BlockEditor::updateEmbeds()
         if (!player || player->property("videoUrl").toString() != url) {
             delete player;
             player = WebPlayer::create(viewport(), MediaLinks::playerUrl(url, true));
-            if (!player)
+            if (!player) {
+                // The player couldn't load: the browser plays it instead.
+                playing.remove(id);
+                Links::open(this, url);
                 continue;
+            }
             player->setProperty("videoUrl", url);
         }
         const QRectF frame = TextObjects::videoFrame(objectRect(b));

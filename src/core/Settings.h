@@ -24,6 +24,7 @@ public:
     int textScale = 100; // percent
     bool showBacklinks = true;
     bool spellCheck = true;
+    bool linkPreviews = true; // fetch titles and images for pasted links
     QStringList expanded; // sidebar pages left open
     QString backupDir;    // empty: backups/ in the workspace folder
     int keepBackups = 7;  // daily copies kept

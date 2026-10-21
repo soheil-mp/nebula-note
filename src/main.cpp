@@ -35,6 +35,16 @@ namespace
 {
 void loadFonts()
 {
+    // Inter 4 is often installed already ("Inter Display" came with it): use
+    // that instead of loading the embedded copy (40 ms and ~5 MB at start).
+    const QStringList families = QFontDatabase::families();
+    if (families.contains(QStringLiteral("Inter")) && families.contains(QStringLiteral("Inter Display"))) {
+        const QStringList styles = QFontDatabase::styles(QStringLiteral("Inter"));
+        const QStringList needed = {QStringLiteral("Regular"), QStringLiteral("Medium"), QStringLiteral("SemiBold"), QStringLiteral("Bold"),
+                                    QStringLiteral("Italic"), QStringLiteral("Bold Italic")};
+        if (std::all_of(needed.begin(), needed.end(), [&](const QString &s) { return styles.contains(s); }))
+            return;
+    }
     QDirIterator it(QStringLiteral(":/fonts"), {QStringLiteral("*.otf"), QStringLiteral("*.ttf")});
     while (it.hasNext())
         QFontDatabase::addApplicationFont(it.next());

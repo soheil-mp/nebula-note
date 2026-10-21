@@ -39,9 +39,10 @@ fi
 generator=()
 command -v ninja >/dev/null && generator=(-G Ninja)
 
-# Videos play inside pages through Qt WebEngine. Its libraries usually come
-# with the desktop; when the headers (qt6-webengine-dev) aren't installed,
-# fetch them into a cache (no root needed) and build against those.
+# Videos play inside pages through a plugin built on Qt WebEngine (loaded only
+# when a video plays). Its libraries usually come with the desktop; when the
+# headers (qt6-webengine-dev) aren't installed, fetch them into a cache (no
+# root needed) and build against those.
 extra=()
 multiarch="$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo x86_64-linux-gnu)"
 syslib="/usr/lib/$multiarch"
@@ -78,7 +79,8 @@ cmake -S . -B "$BUILD_DIR" "${generator[@]}" "${extra[@]}" \
 echo "==> Building"
 cmake --build "$BUILD_DIR" --parallel --target nebula-note
 echo "==> Installing to $PREFIX"
-cmake --install "$BUILD_DIR" >/dev/null
+# Stripped: the symbol tables are only for debuggers.
+cmake --install "$BUILD_DIR" --strip >/dev/null
 BIN="$PREFIX/bin/nebula-note"
 
 # The app used to be called Nebula: remove its old program, menu entry,

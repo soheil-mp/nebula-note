@@ -12,6 +12,7 @@
 #include "core/Markdown.h"
 #include "core/MediaLinks.h"
 #include "core/Workspace.h"
+#include "ui/Links.h"
 #include "ui/WebPlayer.h"
 #include "ui/DatePopover.h"
 #include "ui/Theme.h"
@@ -366,10 +367,7 @@ void BlockEditor::runButton(int blockNumber)
                 emit openPage(page);
             }
         } else if (type == QLatin1String("url")) {
-            QString url = a.value(QStringLiteral("url")).toString();
-            if (!url.contains(QStringLiteral("://")))
-                url.prepend(QStringLiteral("https://"));
-            QDesktopServices::openUrl(QUrl(url));
+            Links::open(this, a.value(QStringLiteral("url")).toString());
         }
     }
 }
@@ -461,9 +459,9 @@ void BlockEditor::openObject(int blockNumber)
         return;
     const Block b = blockProps(blk);
     if (!b.media.isEmpty() && m_ws)
-        QDesktopServices::openUrl(QUrl::fromLocalFile(m_ws->mediaPath(b.media)));
+        Links::openMedia(m_ws->mediaPath(b.media));
     else if (!b.url.isEmpty())
-        QDesktopServices::openUrl(QUrl(b.url));
+        Links::open(this, b.url);
 }
 
 QList<QPair<QString, QRectF>> BlockEditor::imageTools(const QTextBlock &block) const
@@ -551,7 +549,7 @@ void BlockEditor::activateObject(const QTextBlock &block, int part, const QPoint
             m_playing.insert(idOf(block));
             scheduleEmbeds();
         } else
-            QDesktopServices::openUrl(QUrl(b.url));
+            Links::open(this, b.url);
         break;
     case BlockType::Video:
     case BlockType::Audio:

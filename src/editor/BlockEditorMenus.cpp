@@ -21,6 +21,7 @@
 #include "core/Workspace.h"
 #include "ui/Cosmos.h"
 #include "ui/Icons.h"
+#include "ui/Links.h"
 #include "ui/Theme.h"
 
 #include <QAbstractTextDocumentLayout>
@@ -899,7 +900,7 @@ void BlockEditor::showBlockMenu(int blockNumber, const QPoint &globalPos)
     case BlockType::Embed:
         menu->addAction(Icons::icon(QStringLiteral("pencil")), tr("Edit link"), this, [this, blockNumber, below] { askForLink(blockNumber, below); });
         if (!props.url.isEmpty()) {
-            menu->addAction(Icons::icon(QStringLiteral("external")), tr("Open link"), this, [url = props.url] { QDesktopServices::openUrl(QUrl(url)); });
+            menu->addAction(Icons::icon(QStringLiteral("external")), tr("Open link"), this, [this, url = props.url] { Links::open(this, url); });
             menu->addAction(Icons::icon(QStringLiteral("refresh")), tr("Refresh preview"), this, [this, id = props.id, url = props.url] { fetchPreview(id, url); });
         }
         break;
@@ -958,7 +959,7 @@ void BlockEditor::showBlockMenu(int blockNumber, const QPoint &globalPos)
         });
         menu->addAction(Icons::icon(QStringLiteral("external")), tr("Open original"), this, [this, props] {
             if (m_ws)
-                QDesktopServices::openUrl(QUrl::fromLocalFile(m_ws->mediaPath(props.media)));
+                Links::openMedia(m_ws->mediaPath(props.media));
         });
         break;
     }

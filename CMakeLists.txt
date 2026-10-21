@@ -42,13 +42,19 @@ file(GLOB NEBULA_UI_SOURCES CONFIGURE_DEPENDS
 add_library(nebula_ui STATIC ${NEBULA_UI_SOURCES})
 target_link_libraries(nebula_ui PUBLIC nebula_core Qt6::Widgets Qt6::Svg Qt6::Network)
 
-# Video embeds play inside pages when Qt WebEngine is there (qt6-webengine-dev);
-# without it they show a thumbnail and open in the browser.
+include(GNUInstallDirs)
+# Video embeds play inside pages through a plugin built on Qt WebEngine
+# (qt6-webengine-dev), loaded the first time a video plays: the app itself
+# doesn't link the browser engine. Without it videos open in the browser.
+target_compile_definitions(nebula_ui PRIVATE NEBULA_PLUGIN_DIR="${CMAKE_INSTALL_FULL_LIBDIR}/nebula-note")
 find_package(Qt6 QUIET OPTIONAL_COMPONENTS WebEngineWidgets)
 if(Qt6WebEngineWidgets_FOUND)
-    message(STATUS "Qt WebEngine found: videos play inside pages")
-    target_link_libraries(nebula_ui PUBLIC Qt6::WebEngineWidgets)
-    target_compile_definitions(nebula_ui PUBLIC NEBULA_HAVE_WEBENGINE)
+    message(STATUS "Qt WebEngine found: building the video player plugin")
+    add_library(nebula-webplayer MODULE src/plugins/webplayer/WebPlayerPlugin.cpp)
+    target_link_libraries(nebula-webplayer PRIVATE Qt6::WebEngineWidgets Qt6::Widgets)
+    set_target_properties(nebula-webplayer PROPERTIES PREFIX "" LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+    add_dependencies(nebula_ui nebula-webplayer)
+    install(TARGETS nebula-webplayer LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/nebula-note)
 else()
     message(STATUS "Qt WebEngine not found: video embeds open in the browser (install qt6-webengine-dev to play them in pages)")
 endif()
@@ -81,7 +87,6 @@ qt_add_resources(nebula-note "nebula_assets"
     BASE resources
     FILES ${NEBULA_FONTS} ${NEBULA_UI_IMAGES} resources/icons/app/nebula.svg)
 
-include(GNUInstallDirs)
 install(TARGETS nebula-note RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES resources/icons/app/nebula.svg
     DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps

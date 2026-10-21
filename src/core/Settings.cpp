@@ -18,6 +18,7 @@ void Settings::load()
     textScale = qBound(80, q.value(QStringLiteral("appearance/textScale"), 100).toInt(), 140);
     showBacklinks = q.value(QStringLiteral("editor/showBacklinks"), true).toBool();
     spellCheck = q.value(QStringLiteral("editor/spellCheck"), true).toBool();
+    linkPreviews = q.value(QStringLiteral("editor/linkPreviews"), true).toBool();
     sidebarWidth = qBound(200, q.value(QStringLiteral("window/sidebarWidth"), 260).toInt(), 480);
     sidebarCollapsed = q.value(QStringLiteral("window/sidebarCollapsed"), false).toBool();
     geometry = q.value(QStringLiteral("window/geometry")).toByteArray();
@@ -38,6 +39,7 @@ void Settings::save()
     q.setValue(QStringLiteral("appearance/textScale"), textScale);
     q.setValue(QStringLiteral("editor/showBacklinks"), showBacklinks);
     q.setValue(QStringLiteral("editor/spellCheck"), spellCheck);
+    q.setValue(QStringLiteral("editor/linkPreviews"), linkPreviews);
     q.setValue(QStringLiteral("window/sidebarWidth"), sidebarWidth);
     q.setValue(QStringLiteral("window/sidebarCollapsed"), sidebarCollapsed);
     q.setValue(QStringLiteral("window/geometry"), geometry);

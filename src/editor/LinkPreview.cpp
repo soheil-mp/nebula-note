@@ -1,6 +1,7 @@
 #include "LinkPreview.h"
 
 #include "core/MediaLinks.h"
+#include "core/Settings.h"
 #include "core/Workspace.h"
 
 #include <QCoreApplication>
@@ -95,6 +96,12 @@ QString LinkPreview::providerOf(const QString &url)
 
 void LinkPreview::fetch(const QString &url, std::function<void(const Info &)> done)
 {
+    // Previews ask the linked site (or its oEmbed service): nothing goes out
+    // when they're turned off. The card shows the link itself.
+    if (!Settings::instance().linkPreviews) {
+        QTimer::singleShot(0, this, [done] { done(Info{}); });
+        return;
+    }
     // Videos: the provider's oEmbed answers with the title and a thumbnail
     // (the watch page itself may be a consent wall).
     const QString oembed = MediaLinks::oembedUrl(url);

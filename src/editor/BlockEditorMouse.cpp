@@ -12,6 +12,7 @@
 #include "core/Workspace.h"
 #include "ui/Cosmos.h"
 #include "ui/Icons.h"
+#include "ui/Links.h"
 #include "ui/Theme.h"
 
 #include <QAbstractTextDocumentLayout>
@@ -400,7 +401,7 @@ void BlockEditor::mousePressEvent(QMouseEvent *e)
                 else
                     emit openBlock(m.captured(1), m.captured(2));
             } else {
-                QDesktopServices::openUrl(QUrl(h.href));
+                Links::open(this, h.href);
             }
             return;
         }

@@ -1,75 +1,66 @@
 #include "WebPlayer.h"
 
-#ifdef NEBULA_HAVE_WEBENGINE
-#include <QPainter>
-#include <QPainterPath>
-#include <QResizeEvent>
-#include <QVBoxLayout>
-#include <QWebEngineFullScreenRequest>
-#include <QWebEnginePage>
-#include <QWebEngineSettings>
-#include <QWebEngineView>
-#include <QWidget>
+#include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
+#include <QLibrary>
 
 namespace
 {
-// The player inside a frame with the page's rounded corners.
-class PlayerFrame : public QWidget
+constexpr int kAbi = 1;
+using Create = QWidget *(*)(QWidget *, const QString &);
+using Abi = int (*)();
+
+QString pluginPath()
 {
-public:
-    PlayerFrame(QWidget *parent, const QString &url)
-        : QWidget(parent)
-    {
-        auto *v = new QVBoxLayout(this);
-        v->setContentsMargins(0, 0, 0, 0);
-        m_view = new QWebEngineView(this);
-        QWebEngineSettings *s = m_view->settings();
-        s->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture, false);
-        s->setAttribute(QWebEngineSettings::FullScreenSupportEnabled, true);
-        m_view->page()->setBackgroundColor(QColor(0x0C, 0x0C, 0x0F));
-        // An iframe in a small page, so the player sees a referring page as
-        // it does on the web (players refuse to start without one).
-        const QString html = QStringLiteral(
-                                 "<!doctype html><html><head><meta charset='utf-8'><style>html,body{margin:0;height:100%;background:#0c0c0f;overflow:hidden}"
-                                 "iframe{border:0;width:100%;height:100%}</style></head><body><iframe src='%1' allow='autoplay; encrypted-media; "
-                                 "picture-in-picture; fullscreen' allowfullscreen></iframe></body></html>")
-                                 .arg(url.toHtmlEscaped());
-        m_view->setHtml(html, QUrl(QStringLiteral("https://nebula-note.app/")));
-        connect(m_view->page(), &QWebEnginePage::fullScreenRequested, this, [](QWebEngineFullScreenRequest request) { request.accept(); });
-        v->addWidget(m_view);
-    }
+    static const QString path = [] {
+        QStringList dirs;
+        if (const QByteArray env = qgetenv("NEBULA_PLUGIN_DIR"); !env.isEmpty())
+            dirs << QString::fromLocal8Bit(env);
+        // Next to the program (a build), or its lib/ folder (installed).
+        const QString app = QCoreApplication::applicationDirPath();
+        dirs << app << app + QStringLiteral("/../lib/nebula-note") << app + QStringLiteral("/../lib64/nebula-note");
+#ifdef NEBULA_PLUGIN_DIR
+        dirs << QStringLiteral(NEBULA_PLUGIN_DIR);
+#endif
+        for (const QString &dir : std::as_const(dirs)) {
+            const QString file = QDir(dir).filePath(QStringLiteral("nebula-webplayer.so"));
+            if (QFileInfo::exists(file))
+                return QFileInfo(file).canonicalFilePath();
+        }
+        return QString();
+    }();
+    return path;
+}
 
-protected:
-    void resizeEvent(QResizeEvent *e) override
-    {
-        QWidget::resizeEvent(e);
-        QPainterPath path;
-        path.addRoundedRect(QRectF(rect()), 10, 10);
-        setMask(QRegion(path.toFillPolygon().toPolygon()));
-    }
-
-private:
-    QWebEngineView *m_view;
-};
+Create factory()
+{
+    static Create create = [] () -> Create {
+        if (pluginPath().isEmpty())
+            return nullptr;
+        static QLibrary lib(pluginPath());
+        if (!lib.load()) {
+            qWarning("Nebula Note: the video player couldn't be loaded: %s", qPrintable(lib.errorString()));
+            return nullptr;
+        }
+        const auto abi = reinterpret_cast<Abi>(lib.resolve("nebula_webplayer_abi"));
+        if (!abi || abi() != kAbi) {
+            qWarning("Nebula Note: the video player plugin doesn't match this version");
+            return nullptr;
+        }
+        return reinterpret_cast<Create>(lib.resolve("nebula_webplayer_create"));
+    }();
+    return create;
+}
 } // namespace
 
 bool WebPlayer::available()
 {
-    return true;
+    return !pluginPath().isEmpty();
 }
 
 QWidget *WebPlayer::create(QWidget *parent, const QString &playerUrl)
 {
-    return new PlayerFrame(parent, playerUrl);
+    const Create make = factory();
+    return make ? make(parent, playerUrl) : nullptr;
 }
-#else
-bool WebPlayer::available()
-{
-    return false;
-}
-
-QWidget *WebPlayer::create(QWidget *, const QString &)
-{
-    return nullptr;
-}
-#endif

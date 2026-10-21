@@ -271,7 +271,12 @@ void BlockEditor::reload()
     doc->setUndoRedoEnabled(false);
     QList<Block> content = m_ws && !m_pageId.isEmpty() ? m_ws->content(m_pageId) : QList<Block>();
     ensureBlockIds(content);
-    // The frame first: changing it after the content would lay everything out again.
+    // No page size, no layout: the page is laid out once, after the content,
+    // the frame and the margins are in (each pass costs seconds on long pages).
+    const QSizeF pageSize = doc->pageSize();
+    doc->setPageSize(QSizeF(0, 0));
+    DocumentIO::load(doc, content, m_ctx.style);
+    // (After loading: clearing the document resets the frame.)
     QTextFrameFormat ff = doc->rootFrame()->frameFormat();
     ff.setLeftMargin(gutter());
     ff.setRightMargin(rightMargin());
@@ -280,11 +285,6 @@ void BlockEditor::reload()
     ff.setPadding(0);
     ff.setBorder(0);
     doc->rootFrame()->setFrameFormat(ff);
-    // No page size, no layout: the page is laid out once, after the content
-    // and its margins are in (each pass costs seconds on long pages).
-    const QSizeF pageSize = doc->pageSize();
-    doc->setPageSize(QSizeF(0, 0));
-    DocumentIO::load(doc, content, m_ctx.style);
     m_loading = false;
     m_normalizeFull = true;
     normalize(); // margins and ids, outside the undo history

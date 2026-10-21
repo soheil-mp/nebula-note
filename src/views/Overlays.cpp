@@ -755,6 +755,18 @@ QWidget *SettingsPanel::appearancePage()
                             checker.isAvailable() ? tr("Underline misspelled words as you type (%1).").arg(QLocale(checker.language()).nativeLanguageName())
                                                   : tr("Needs Hunspell and a dictionary installed."),
                             spelling));
+    v->addWidget(separator());
+
+    auto *previews = new Switch;
+    previews->setChecked(s.linkPreviews);
+    connect(previews, &Switch::toggled, this, [](bool on) {
+        Settings::instance().linkPreviews = on;
+        Settings::instance().save();
+    });
+    v->addWidget(settingRow(tr("Link previews"),
+                            tr("Fetch titles, images and video thumbnails from the sites pasted links point to. "
+                               "Off: nothing is sent anywhere when you paste a link."),
+                            previews));
     v->addStretch();
     return page;
 }

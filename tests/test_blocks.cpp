@@ -391,6 +391,19 @@ private slots:
         return b;
     }
 
+    // The page column: content starts where the title does (the gutter left
+    // of it holds the block handles).
+    void pageKeepsItsGutter()
+    {
+        fresh({para("first"), para("second")});
+        const QTextFrameFormat ff = doc()->rootFrame()->frameFormat();
+        QCOMPARE(ff.leftMargin(), double(m_ed->gutter()));
+        QCOMPARE(ff.rightMargin(), double(m_ed->rightMargin()));
+        // Switching pages keeps it too.
+        fresh({para("third")});
+        QCOMPARE(doc()->rootFrame()->frameFormat().leftMargin(), double(m_ed->gutter()));
+    }
+
     // Typing re-checks only the changed stretch of the page; the result must
     // match a full pass (margins inside callouts, after captions, lists…).
     void partialNormalizeMatchesFull()
