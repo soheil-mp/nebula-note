@@ -221,6 +221,24 @@ MainWindow::MainWindow(QWidget *parent)
             m_page->showFind();
     });
     shortcut(QKeySequence(Qt::Key_F11), [this] { isFullScreen() ? showNormal() : showFullScreen(); });
+    // F6: the keyboard moves between the sidebar's pages and the page (the
+    // usual way between a window's regions).
+    auto cycleFocus = [this] {
+        PageTree *tree = m_sidebar->tree();
+        if (tree->isVisible() && !tree->hasFocus()) {
+            tree->setFocus(Qt::ShortcutFocusReason);
+            return;
+        }
+        QWidget *content = m_stack->currentWidget();
+        if (content == m_page)
+            m_page->focusDefault();
+        else if (m_database->body()->activeView())
+            m_database->body()->activeView()->setFocus(Qt::ShortcutFocusReason);
+        else if (content)
+            content->setFocus(Qt::ShortcutFocusReason);
+    };
+    shortcut(QKeySequence(Qt::Key_F6), cycleFocus);
+    shortcut(QKeySequence(Qt::SHIFT | Qt::Key_F6), cycleFocus);
     shortcut(QKeySequence(Qt::CTRL | Qt::Key_T), [this] { newTab(); });
     shortcut(QKeySequence(Qt::CTRL | Qt::Key_W), [this] { closeTab(m_currentTab); });
     shortcut(QKeySequence(Qt::CTRL | Qt::Key_Tab), [this] { switchTab((m_currentTab + 1) % int(m_tabs.size())); });

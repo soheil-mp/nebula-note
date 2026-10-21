@@ -4,6 +4,7 @@
 #include "core/Workspace.h"
 #include "platform/SingleInstance.h"
 #include "platform/WindowEffects.h"
+#include "ui/Accessible.h"
 #include "ui/ExportRenderers.h"
 #include "ui/NetFetch.h"
 #include "ui/Plurals.h"
@@ -262,6 +263,7 @@ int main(int argc, char **argv)
     if (cli.isSet(renderIconOpt))
         return renderIcon(cli.value(renderIconOpt), size.isValid() ? size : QSize(256, 256));
 
+    Accessible::install(); // screen readers see the custom-painted lists and controls
     static PluralTranslator plurals;
     QCoreApplication::installTranslator(&plurals);
     installExportRenderers();

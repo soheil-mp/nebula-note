@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/Accessible.h"
+
 #include <QPointer>
 #include <QRegion>
 #include <QWidget>
@@ -8,11 +10,24 @@ class QLineEdit;
 class QScrollArea;
 
 // The page tree with Favorites and Pages sections.
-class PageTree : public QWidget
+// The sidebar's pages. With the keyboard focus (F6): arrows move, Right and
+// Left expand and collapse, Enter opens, F2 renames, the menu key shows the
+// page menu. Screen readers see a tree.
+class PageTree : public QWidget, public AccessibleItems
 {
     Q_OBJECT
+    friend class AppTests;
 public:
     explicit PageTree(QWidget *parent = nullptr);
+
+    QAccessible::Role accessibleRole() const override { return QAccessible::Tree; }
+    QAccessible::Role accessibleItemRole() const override { return QAccessible::TreeItem; }
+    int accessibleCount() const override { return int(m_rows.size()); }
+    QString accessibleItemName(int index) const override;
+    QAccessible::State accessibleItemState(int index) const override;
+    QRect accessibleItemRect(int index) const override;
+    void accessiblePress(int index) override { activate(index); }
+    int accessibleFocus() const override { return m_focusRow; }
     void rebuild();
     void setCurrent(const QString &id);
     void revealPage(const QString &id);
@@ -35,6 +50,9 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent *) override;
     void leaveEvent(QEvent *) override;
     void contextMenuEvent(QContextMenuEvent *) override;
+    void keyPressEvent(QKeyEvent *) override;
+    void focusInEvent(QFocusEvent *) override;
+    void focusOutEvent(QFocusEvent *) override;
 
 private:
     struct Row {
@@ -59,9 +77,14 @@ private:
     void appendPages(const QString &parentId, int depth, bool favorites);
     void appendViews(const QString &databaseId, int depth);
     void finishRename(bool commit);
+    void activate(int index);
+    void focusRow(int index);
+    bool focusable(int index) const;
 
     QList<Row> m_rows;
     QString m_current;
+    int m_focusRow = -1;    // keyboard focus
+    QString m_focusKey;     // …kept across rebuilds
     int m_hover = -1;
     int m_hoverPart = 0; // 0 row, 1 chevron, 2 plus, 3 more, 4 header plus
     // drag & drop

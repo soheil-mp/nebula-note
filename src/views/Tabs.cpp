@@ -20,6 +20,7 @@ void TabStrip::setTabs(const QList<Tab> &tabs, int current)
     m_tabs = tabs;
     m_current = current;
     layoutTabs();
+    Accessible::itemsChanged(this);
     update();
 }
 

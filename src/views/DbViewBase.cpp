@@ -6,6 +6,7 @@
 #include "PropertyEditors.h"
 #include "core/Blocks.h"
 #include "core/Workspace.h"
+#include "ui/Accessible.h"
 #include "ui/Cosmos.h"
 #include "ui/Icons.h"
 #include "ui/Theme.h"
@@ -144,6 +145,49 @@ DbView::DbView(QWidget *parent)
 void DbView::setContext(const ViewContext &ctx)
 {
     m_ctx = ctx;
+    Accessible::itemsChanged(this);
+}
+
+int DbView::accessibleCount() const
+{
+    return int(qMin<qsizetype>(m_ctx.rows.size(), rowLimit()));
+}
+
+QString DbView::accessibleItemName(int index) const
+{
+    return index >= 0 && index < m_ctx.rows.size() ? titleOf(m_ctx.rows[index]) : QString();
+}
+
+QString DbView::accessibleItemDescription(int index) const
+{
+    if (index < 0 || index >= m_ctx.rows.size())
+        return {};
+    QStringList parts;
+    for (const Property *p : m_ctx.schema.orderedProps(m_ctx.view)) {
+        if (p->type == PropType::Title || p->type == PropType::Button)
+            continue;
+        const QJsonValue v = valueOf(m_ctx.rows[index], *p);
+        if (isEmptyValue(*p, v) && p->type != PropType::Checkbox)
+            continue;
+        parts << p->name + QStringLiteral(": ") + displayValue(*p, v);
+        if (parts.size() == 6)
+            break;
+    }
+    return parts.join(QStringLiteral(", "));
+}
+
+QRect DbView::accessibleItemRect(int index) const
+{
+    if (index < 0 || index >= m_ctx.rows.size() || !m_ctx.rows[index].meta)
+        return {};
+    const QRect global = titleRectFor(m_ctx.rows[index].meta->id);
+    return global.isEmpty() ? QRect() : QRect(mapFromGlobal(global.topLeft()), global.size());
+}
+
+void DbView::accessiblePress(int index)
+{
+    if (index >= 0 && index < m_ctx.rows.size() && m_ctx.rows[index].meta)
+        emit openRow(m_ctx.rows[index].meta->id);
 }
 
 void DbView::setScrollOffset(int x)

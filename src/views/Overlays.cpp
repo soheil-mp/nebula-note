@@ -5,6 +5,7 @@
 #include "core/Workspace.h"
 #include "editor/SpellChecker.h"
 #include "platform/WindowEffects.h"
+#include "ui/Accessible.h"
 #include "ui/Cosmos.h"
 #include "ui/Icons.h"
 #include "ui/Theme.h"
@@ -140,10 +141,48 @@ void ModalOverlay::keyPressEvent(QKeyEvent *e)
 
 // ---- QuickFind ---------------------------------------------------------------------
 
-class ResultList : public QWidget
+class ResultList : public QWidget, public AccessibleItems
 {
     Q_OBJECT
 public:
+    // Screen readers: a list of results; moving through them (arrows in the
+    // search field) announces the one selected.
+    QAccessible::Role accessibleRole() const override { return QAccessible::List; }
+    QAccessible::Role accessibleItemRole() const override { return QAccessible::ListItem; }
+    int accessibleCount() const override { return int(m_items.size()); }
+    QString accessibleItemName(int index) const override { return m_items.value(index).title; }
+    QString accessibleItemDescription(int index) const override
+    {
+        const Item &it = m_items.value(index);
+        return it.sub.isEmpty() ? it.section : it.sub;
+    }
+    QAccessible::State accessibleItemState(int index) const override
+    {
+        QAccessible::State s;
+        s.selected = index == m_current;
+        return s;
+    }
+    QRect accessibleItemRect(int index) const override
+    {
+        for (const Row &r : m_rows)
+            if (r.item == index)
+                return QRect(0, r.y, width(), r.h);
+        return {};
+    }
+    void accessiblePress(int index) override
+    {
+        if (index >= 0 && index < m_items.size())
+            emit activated(m_items[index].id);
+    }
+    int accessibleFocus() const override { return m_current; }
+    void announceCurrent()
+    {
+        if (m_current < 0 || m_current >= m_items.size())
+            return;
+        const Item &it = m_items[m_current];
+        Accessible::announce(this, it.sub.isEmpty() ? it.title : it.title + QStringLiteral(", ") + it.sub);
+    }
+
     struct Item {
         QString id;    // "page:<id>", "action:<id>", "create:<title>"
         QString icon;
@@ -180,6 +219,7 @@ public:
         // Room for the "no pages match" note under a lone create row.
         if (std::none_of(m_items.cbegin(), m_items.cend(), [](const Item &it) { return it.id.startsWith(QLatin1String("page:")); }))
             setFixedHeight(qMax(height(), y + 110));
+        Accessible::itemsChanged(this);
         update();
     }
     void move(int d)
@@ -190,6 +230,7 @@ public:
         for (const Row &r : m_rows)
             if (r.item == m_current)
                 emit ensureVisible(r.y, r.h);
+        announceCurrent();
         update();
     }
     QString current() const { return m_current >= 0 ? m_items[m_current].id : QString(); }
@@ -594,6 +635,11 @@ QLabel *heading(const QString &text)
 
 QWidget *settingRow(const QString &title, const QString &detail, QWidget *control)
 {
+    // The control is what a screen reader lands on: it carries the row's words.
+    if (control && control->accessibleName().isEmpty())
+        control->setAccessibleName(title);
+    if (control && control->accessibleDescription().isEmpty())
+        control->setAccessibleDescription(detail);
     auto *row = new QWidget;
     auto *h = new QHBoxLayout(row);
     h->setContentsMargins(0, 10, 0, 10);
@@ -906,6 +952,7 @@ QWidget *SettingsPanel::shortcutsPage()
         {QStringLiteral("Ctrl+\\"), tr("Toggle sidebar")},
         {QStringLiteral("Ctrl+F"), tr("Find in page")},
         {QStringLiteral("Ctrl+Shift+U"), tr("Go to parent page")},
+        {QStringLiteral("F6 / Shift+F6"), tr("Move between the sidebar and the page (then arrows, Enter, F2)")},
         {QStringLiteral("/"), tr("Command menu")},
         {QStringLiteral("@  or  [["), tr("Mention a page")},
         {QStringLiteral("Ctrl+B · I · U · E"), tr("Bold · italic · underline · code")},

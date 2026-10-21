@@ -103,7 +103,7 @@ class DbUiTests : public QObject
 private slots:
     void initTestCase()
     {
-        QDirIterator it(QStringLiteral(":/fonts"), {QStringLiteral("*.otf")});
+        QDirIterator it(QStringLiteral(":/fonts"), {QStringLiteral("*.otf"), QStringLiteral("*.ttf")});
         while (it.hasNext())
             QFontDatabase::addApplicationFont(it.next());
         qApp->setPalette(Theme::palette());

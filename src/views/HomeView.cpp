@@ -3,6 +3,7 @@
 #include "core/Schema.h"
 #include "core/Settings.h"
 #include "core/Workspace.h"
+#include "ui/Accessible.h"
 #include "ui/Cosmos.h"
 #include "ui/Icons.h"
 #include "ui/Theme.h"
@@ -18,7 +19,7 @@
 #include <QPainterPath>
 #include <QRegion>
 
-class HomeCanvas : public QWidget
+class HomeCanvas : public QWidget, public AccessibleItems
 {
     Q_OBJECT
 public:
@@ -26,6 +27,51 @@ public:
         : QWidget(parent)
     {
         setMouseTracking(true);
+    }
+
+    // Screen readers: everything clickable on Home, by what it does.
+    QAccessible::Role accessibleRole() const override { return QAccessible::Pane; }
+    QAccessible::Role accessibleItemRole() const override { return QAccessible::Button; }
+    int accessibleCount() const override { return int(m_targets.size()); }
+    QString accessibleItemName(int index) const override
+    {
+        const QString action = m_targets.value(index).action;
+        Workspace *ws = Workspace::instance();
+        if (action.startsWith(QLatin1String("page:")) && ws)
+            return ws->title(action.mid(5));
+        if (action.startsWith(QLatin1String("up:")) && ws)
+            return ws->title(action.mid(3));
+        if (action.startsWith(QLatin1String("day:"))) {
+            const QDate d = QDate::fromString(action.mid(4), Qt::ISODate);
+            const int n = int(m_dated.value(d).size());
+            return QLocale().toString(d, QLocale::LongFormat) + (n ? tr(", %n item(s)", nullptr, n) : QString());
+        }
+        if (action == QLatin1String("cal:prev"))
+            return tr("Previous month");
+        if (action == QLatin1String("cal:next"))
+            return tr("Next month");
+        if (action == QLatin1String("new"))
+            return tr("New page");
+        if (action == QLatin1String("db"))
+            return tr("New database");
+        if (action == QLatin1String("import"))
+            return tr("Import");
+        if (action == QLatin1String("search"))
+            return tr("Search");
+        return action;
+    }
+    QRect accessibleItemRect(int index) const override { return m_targets.value(index).rect.toAlignedRect(); }
+    void accessiblePress(int index) override
+    {
+        const QString action = m_targets.value(index).action;
+        if (action == QLatin1String("cal:prev") || action == QLatin1String("cal:next")) {
+            m_month = m_month.addMonths(action == QLatin1String("cal:prev") ? -1 : 1);
+            relayout();
+        } else if (action.startsWith(QLatin1String("day:"))) {
+            openDay(QDate::fromString(action.mid(4), Qt::ISODate), mapToGlobal(accessibleItemRect(index).bottomLeft()));
+        } else if (!action.isEmpty()) {
+            emit activated(action);
+        }
     }
 
     struct Target {
@@ -128,6 +174,7 @@ public:
         m_x0 = x0;
         m_colW = colW;
         setFixedHeight(int(y));
+        Accessible::itemsChanged(this);
         update();
     }
 

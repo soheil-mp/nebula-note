@@ -6,10 +6,14 @@
 #include "core/Templates.h"
 #include "core/Workspace.h"
 #include "editor/BlockEditor.h"
+#include "ui/Accessible.h"
 #include "ui/ExportRenderers.h"
 #include "ui/Plurals.h"
 #include "ui/Theme.h"
+#include "ui/Widgets.h"
+#include "views/DatabaseBody.h"
 #include "views/DatabaseView.h"
+#include "views/DbViews.h"
 #include "views/History.h"
 #include "views/MainWindow.h"
 #include "views/Sidebar.h"
@@ -20,6 +24,7 @@
 #include "views/PageMenu.h"
 #include "views/PageView.h"
 
+#include <QAccessible>
 #include <QApplication>
 #include <QDateTime>
 #include <QDirIterator>
@@ -61,11 +66,12 @@ class AppTests : public QObject
 private slots:
     void initTestCase()
     {
-        QDirIterator it(QStringLiteral(":/fonts"), {QStringLiteral("*.otf")});
+        QDirIterator it(QStringLiteral(":/fonts"), {QStringLiteral("*.otf"), QStringLiteral("*.ttf")});
         while (it.hasNext())
             QFontDatabase::addApplicationFont(it.next());
         qApp->setPalette(Theme::palette());
         qApp->setStyleSheet(Theme::styleSheet());
+        Accessible::install();
         Settings::instance().expanded.clear();
         m_ws = new Workspace(this);
         QVERIFY(m_ws->open(m_dir.filePath(QStringLiteral("ws"))));
@@ -387,6 +393,92 @@ private slots:
         for (const auto &item : sidebar->m_top)
             ids.append(item.id);
         QCOMPARE(ids, (QStringList{QStringLiteral("search"), QStringLiteral("home"), QStringLiteral("import")}));
+    }
+
+    // ---- accessibility -----------------------------------------------------------
+
+    void sidebarIsATreeForScreenReaders()
+    {
+        auto *tree = find<PageTree>();
+        QVERIFY(tree);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(tree);
+        QVERIFY(iface);
+        QCOMPARE(iface->role(), QAccessible::Tree);
+        // Every row is an item named like the page; pressing one opens it.
+        int pageRow = -1;
+        const QString target = pageNamed(QStringLiteral("Projects"));
+        for (int i = 0; i < iface->childCount() && pageRow < 0; ++i) {
+            QAccessibleInterface *child = iface->child(i);
+            if (child && child->role() == QAccessible::TreeItem && child->text(QAccessible::Name) == QStringLiteral("Projects")
+                && !child->state().disabled)
+                pageRow = i;
+        }
+        QVERIFY(pageRow >= 0);
+        QAccessibleInterface *row = iface->child(pageRow);
+        QVERIFY(row->actionInterface());
+        row->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
+        settle();
+        QCOMPARE(m_win->currentPage(), target);
+        QVERIFY(iface->child(pageRow)->state().selected);
+    }
+
+    void sidebarWorksFromTheKeyboard()
+    {
+        m_win->goHome();
+        settle();
+        auto *tree = find<PageTree>();
+        // F6 moves the keyboard into the sidebar…
+        QTest::keyClick(m_win, Qt::Key_F6);
+        settle();
+        QVERIFY(tree->hasFocus());
+        QVERIFY(tree->m_focusRow >= 0);
+        // …arrows move through the pages, Enter opens one.
+        const int start = tree->m_focusRow;
+        QTest::keyClick(tree, Qt::Key_Down);
+        QVERIFY(tree->m_focusRow != start);
+        const QString id = tree->m_rows[tree->m_focusRow].id;
+        QTest::keyClick(tree, Qt::Key_Return);
+        settle();
+        QCOMPARE(m_win->currentPage(), id);
+        // F6 again goes back to the page.
+        QTest::keyClick(m_win, Qt::Key_F6);
+        settle();
+        QVERIFY(!tree->hasFocus());
+    }
+
+    void controlsHaveNamesAndKeys()
+    {
+        // An icon-only button is named by its tooltip.
+        auto *b = new FlatButton(QStringLiteral("more"));
+        QVERIFY(!b->accessibleName().isEmpty()); // from the icon
+        b->setToolTip(QStringLiteral("Page options"));
+        QCOMPARE(b->accessibleName(), QStringLiteral("Page options"));
+        delete b;
+        // A segmented choice moves with the arrows and reads as radio buttons.
+        Segmented seg({{"a", "Default"}, {"b", "Small"}}, "a");
+        QSignalSpy changed(&seg, &Segmented::changed);
+        QTest::keyClick(&seg, Qt::Key_Right);
+        QCOMPARE(seg.current(), QStringLiteral("b"));
+        QCOMPARE(changed.count(), 1);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(&seg);
+        QCOMPARE(iface->childCount(), 2);
+        QCOMPARE(iface->child(1)->role(), QAccessible::RadioButton);
+        QVERIFY(iface->child(1)->state().checked);
+        QCOMPARE(iface->child(0)->text(QAccessible::Name), QStringLiteral("Default"));
+    }
+
+    void databaseRowsAreListed()
+    {
+        const QString db = m_ws->createDatabase({}, QStringLiteral("Readable"), Schema::basic());
+        m_ws->createRow(db, QStringLiteral("First row"), {{"tags", QJsonArray()}});
+        m_win->navigate(db);
+        settle(80);
+        DbView *view = m_win->databaseView()->body()->activeView();
+        QVERIFY(view);
+        QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(view);
+        QCOMPARE(iface->role(), QAccessible::List);
+        QVERIFY(iface->childCount() >= 1);
+        QCOMPARE(iface->child(0)->text(QAccessible::Name), QStringLiteral("First row"));
     }
 
     void quickFindFiltersAndSorts()

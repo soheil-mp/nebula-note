@@ -8,6 +8,7 @@
 #include "ui/Theme.h"
 
 #include <QContextMenuEvent>
+#include <QFocusEvent>
 #include <QFontMetricsF>
 #include <QKeyEvent>
 #include <QLineEdit>
@@ -31,6 +32,7 @@ PageTree::PageTree(QWidget *parent)
 {
     setMouseTracking(true);
     setAttribute(Qt::WA_TranslucentBackground);
+    setFocusPolicy(Qt::TabFocus); // F6 (or Tab) reaches it; clicks leave the focus in the page
     if (Workspace *ws = Workspace::instance()) {
         connect(ws, &Workspace::treeChanged, this, &PageTree::rebuild);
         connect(ws, &Workspace::favoritesChanged, this, &PageTree::rebuild);
@@ -146,6 +148,155 @@ void PageTree::rebuild()
     }
     setFixedHeight(y + 12);
     m_hover = -1;
+    // The keyboard focus stays on the same row.
+    m_focusRow = -1;
+    for (int i = 0; i < m_rows.size() && !m_focusKey.isEmpty(); ++i)
+        if (m_rows[i].key + m_rows[i].viewId == m_focusKey)
+            m_focusRow = i;
+    Accessible::itemsChanged(this);
+    update();
+}
+
+QString PageTree::accessibleItemName(int index) const
+{
+    const Row &r = m_rows.value(index);
+    if (r.kind == Row::Empty)
+        return tr("No pages inside");
+    return r.title.isEmpty() && r.kind == Row::Page ? Workspace::instance()->title(r.id) : r.title;
+}
+
+QAccessible::State PageTree::accessibleItemState(int index) const
+{
+    QAccessible::State s;
+    const Row &r = m_rows.value(index);
+    if (r.kind == Row::Page && r.hasChildren) {
+        s.expandable = true;
+        s.expanded = r.expanded;
+        s.collapsed = !r.expanded;
+    }
+    s.selected = r.kind == Row::Page && r.id == m_current;
+    if (r.kind == Row::Header || r.kind == Row::Empty)
+        s.disabled = true;
+    return s;
+}
+
+QRect PageTree::accessibleItemRect(int index) const
+{
+    const Row &r = m_rows.value(index);
+    return QRect(0, r.y, width(), r.h);
+}
+
+bool PageTree::focusable(int index) const
+{
+    return index >= 0 && index < m_rows.size() && (m_rows[index].kind == Row::Page || m_rows[index].kind == Row::View);
+}
+
+void PageTree::focusRow(int index)
+{
+    if (!focusable(index))
+        return;
+    m_focusRow = index;
+    m_focusKey = m_rows[index].key + m_rows[index].viewId;
+    emit scrollTo(m_rows[index].y + m_rows[index].h / 2);
+    Accessible::focusItem(this, index);
+    update();
+}
+
+void PageTree::activate(int index)
+{
+    if (!focusable(index))
+        return;
+    const Row &r = m_rows[index];
+    if (r.kind == Row::View)
+        emit openView(r.id, r.viewId);
+    else
+        emit openPage(r.id);
+}
+
+void PageTree::keyPressEvent(QKeyEvent *e)
+{
+    const int count = int(m_rows.size());
+    auto step = [&](int from, int dir) {
+        for (int i = from + dir; i >= 0 && i < count; i += dir)
+            if (focusable(i))
+                return i;
+        return from;
+    };
+    const Row r = m_rows.value(m_focusRow);
+    switch (e->key()) {
+    case Qt::Key_Down:
+        focusRow(step(m_focusRow, 1));
+        return;
+    case Qt::Key_Up:
+        focusRow(step(m_focusRow, -1));
+        return;
+    case Qt::Key_Home:
+        focusRow(step(-1, 1));
+        return;
+    case Qt::Key_End:
+        focusRow(step(count, -1));
+        return;
+    case Qt::Key_Right:
+        if (r.kind == Row::Page && r.hasChildren && !r.expanded)
+            toggle(r);
+        else if (r.expanded)
+            focusRow(step(m_focusRow, 1));
+        return;
+    case Qt::Key_Left:
+        if (r.kind == Row::Page && r.expanded) {
+            toggle(r);
+        } else {
+            // Up to the parent row.
+            for (int i = m_focusRow - 1; i >= 0; --i)
+                if (focusable(i) && m_rows[i].depth < r.depth) {
+                    focusRow(i);
+                    break;
+                }
+        }
+        return;
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+    case Qt::Key_Space:
+        activate(m_focusRow);
+        return;
+    case Qt::Key_F2:
+        if (r.kind == Row::Page)
+            renamePage(r.id);
+        return;
+    case Qt::Key_Menu:
+        if (r.kind == Row::Page)
+            emit pageMenu(r.id, mapToGlobal(QPoint(40, r.y + r.h)));
+        return;
+    default:
+        if (e->key() == Qt::Key_F10 && (e->modifiers() & Qt::ShiftModifier) && r.kind == Row::Page) {
+            emit pageMenu(r.id, mapToGlobal(QPoint(40, r.y + r.h)));
+            return;
+        }
+        QWidget::keyPressEvent(e);
+    }
+}
+
+void PageTree::focusInEvent(QFocusEvent *e)
+{
+    Theme::noteFocusReason(this, e->reason());
+    QWidget::focusInEvent(e);
+    // Start on the open page, or the first one.
+    if (!focusable(m_focusRow)) {
+        int start = -1;
+        for (int i = 0; i < m_rows.size(); ++i)
+            if (focusable(i) && (start < 0 || (m_rows[i].kind == Row::Page && m_rows[i].id == m_current && !m_rows[i].favorites)))
+                start = i;
+        if (start >= 0)
+            focusRow(start);
+    } else {
+        Accessible::focusItem(this, m_focusRow);
+    }
+    update();
+}
+
+void PageTree::focusOutEvent(QFocusEvent *e)
+{
+    QWidget::focusOutEvent(e);
     update();
 }
 
@@ -342,6 +493,10 @@ void PageTree::paintEvent(QPaintEvent *e)
         p.setPen(c.starlight);
         p.drawText(ghostRect.adjusted(30, 0, -8, 0), Qt::AlignVCenter, text);
         p.setOpacity(1.0);
+    }
+    if (Theme::showsFocus(this) && focusable(m_focusRow)) {
+        const Row &r = m_rows[m_focusRow];
+        Theme::paintFocusRing(p, QRectF(4, r.y + 1, width() - 8, r.h - 2), 6);
     }
 }
 

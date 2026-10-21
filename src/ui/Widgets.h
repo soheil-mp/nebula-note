@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Accessible.h"
+
 #include <QAbstractButton>
 #include <QLineEdit>
 #include <QPointer>
@@ -51,11 +53,16 @@ public:
     QSize sizeHint() const override;
 
 protected:
+    bool event(QEvent *) override;
     void paintEvent(QPaintEvent *) override;
     void enterEvent(QEnterEvent *) override;
     void leaveEvent(QEvent *) override;
+    void keyPressEvent(QKeyEvent *) override;
+    void focusInEvent(QFocusEvent *) override;
+    void focusOutEvent(QFocusEvent *) override;
 
 private:
+    void updateAccessibleName();
     QString m_icon;
     int m_iconSize = 16;
     double m_textSize = 13;
@@ -76,6 +83,9 @@ public:
 protected:
     void paintEvent(QPaintEvent *) override;
     void nextCheckState() override;
+    void keyPressEvent(QKeyEvent *) override;
+    void focusInEvent(QFocusEvent *) override;
+    void focusOutEvent(QFocusEvent *) override;
 
 private:
     QVariantAnimation m_anim;
@@ -97,6 +107,9 @@ public:
 
 protected:
     void paintEvent(QPaintEvent *) override;
+    void keyPressEvent(QKeyEvent *) override;
+    void focusInEvent(QFocusEvent *) override;
+    void focusOutEvent(QFocusEvent *) override;
 
 private:
     QString m_icon;
@@ -104,14 +117,24 @@ private:
     bool m_chevron;
 };
 
-// A segmented choice ("Default | Small"): one option is always on.
-class Segmented : public QWidget
+// A segmented choice ("Default | Small"): one option is always on. Arrow
+// keys move it; screen readers see a group of radio buttons.
+class Segmented : public QWidget, public AccessibleItems
 {
     Q_OBJECT
 public:
     Segmented(const QList<QPair<QString, QString>> &options, const QString &current, QWidget *parent = nullptr);
     QString current() const { return m_options.value(m_current).first; }
     QSize sizeHint() const override;
+
+    QAccessible::Role accessibleRole() const override { return QAccessible::Grouping; }
+    QAccessible::Role accessibleItemRole() const override { return QAccessible::RadioButton; }
+    int accessibleCount() const override { return int(m_options.size()); }
+    QString accessibleItemName(int index) const override { return m_options.value(index).second; }
+    QAccessible::State accessibleItemState(int index) const override;
+    QRect accessibleItemRect(int index) const override { return segment(index).toAlignedRect(); }
+    void accessiblePress(int index) override { choose(index); }
+    int accessibleFocus() const override { return m_current; }
 
 signals:
     void changed(const QString &key);
@@ -121,8 +144,12 @@ protected:
     void mouseMoveEvent(QMouseEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
     void leaveEvent(QEvent *) override;
+    void keyPressEvent(QKeyEvent *) override;
+    void focusInEvent(QFocusEvent *) override;
+    void focusOutEvent(QFocusEvent *) override;
 
 private:
+    void choose(int index);
     QRectF segment(int i) const;
     QList<QPair<QString, QString>> m_options;
     int m_current = 0;

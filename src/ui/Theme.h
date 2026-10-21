@@ -76,6 +76,12 @@ void paintSoftShadow(QPainter &p, const QRectF &rect, double radius, int spread,
 void paintCard(QPainter &p, const QRectF &rect, double radius = 12, const QColor &fill = QColor());
 // Rounded hover background used by buttons and rows.
 void paintHover(QPainter &p, const QRectF &rect, double amount, double radius = 6);
+// The ring around whatever has the keyboard focus (when it got there by key).
+void paintFocusRing(QPainter &p, const QRectF &rect, double radius = 6);
+// Whether `w` has the focus and got it from the keyboard (Tab, a shortcut):
+// focus rings show then, not after a click.
+bool showsFocus(const QWidget *w);
+void noteFocusReason(QWidget *w, Qt::FocusReason reason);
 
 // Rounded, frameless menus with the Nebula look.
 void polishMenu(QMenu *menu);

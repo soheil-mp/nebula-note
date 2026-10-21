@@ -4,9 +4,12 @@
 #include "Theme.h"
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDialog>
+#include <QFocusEvent>
 #include <QFontMetricsF>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
@@ -102,6 +105,11 @@ void Popover::keyPressEvent(QKeyEvent *e)
         close();
         return;
     }
+    // Arrows walk through a menu's rows and buttons, like Tab.
+    if (e->key() == Qt::Key_Down || e->key() == Qt::Key_Up) {
+        focusNextPrevChild(e->key() == Qt::Key_Down);
+        return;
+    }
     QWidget::keyPressEvent(e);
 }
 
@@ -119,7 +127,10 @@ FlatButton::FlatButton(const QString &icon, const QString &text, QWidget *parent
 {
     setText(text);
     setCursor(Qt::PointingHandCursor);
-    setFocusPolicy(Qt::NoFocus);
+    // Reachable with Tab (in dialogs and menus); a click leaves the focus
+    // where it was (the page being written).
+    setFocusPolicy(Qt::TabFocus);
+    updateAccessibleName();
     m_hover.setDuration(Theme::animMs(120));
     m_hover.setStartValue(0.0);
     m_hover.setEndValue(1.0);
@@ -129,6 +140,67 @@ FlatButton::FlatButton(const QString &icon, const QString &text, QWidget *parent
 void FlatButton::setIconName(const QString &icon)
 {
     m_icon = icon;
+    updateAccessibleName();
+    update();
+}
+
+// A screen reader needs a name for an icon-only button: its tooltip, or
+// what the icon means.
+void FlatButton::updateAccessibleName()
+{
+    if (!text().isEmpty() || property("nebulaOwnName").toBool())
+        return;
+    if (!toolTip().isEmpty()) {
+        setAccessibleName(toolTip());
+        return;
+    }
+    static const QHash<QString, const char *> names = {
+        {QStringLiteral("plus"), QT_TRANSLATE_NOOP("FlatButton", "Add")},
+        {QStringLiteral("more"), QT_TRANSLATE_NOOP("FlatButton", "More")},
+        {QStringLiteral("close"), QT_TRANSLATE_NOOP("FlatButton", "Close")},
+        {QStringLiteral("trash"), QT_TRANSLATE_NOOP("FlatButton", "Delete")},
+        {QStringLiteral("search"), QT_TRANSLATE_NOOP("FlatButton", "Search")},
+        {QStringLiteral("filter"), QT_TRANSLATE_NOOP("FlatButton", "Filter")},
+        {QStringLiteral("sort"), QT_TRANSLATE_NOOP("FlatButton", "Sort")},
+        {QStringLiteral("settings"), QT_TRANSLATE_NOOP("FlatButton", "Settings")},
+        {QStringLiteral("chevron-left"), QT_TRANSLATE_NOOP("FlatButton", "Back")},
+        {QStringLiteral("chevron-right"), QT_TRANSLATE_NOOP("FlatButton", "Forward")},
+        {QStringLiteral("chevron-down"), QT_TRANSLATE_NOOP("FlatButton", "Expand")},
+        {QStringLiteral("star"), QT_TRANSLATE_NOOP("FlatButton", "Favorite")},
+        {QStringLiteral("comment"), QT_TRANSLATE_NOOP("FlatButton", "Comments")},
+        {QStringLiteral("pencil"), QT_TRANSLATE_NOOP("FlatButton", "Edit")},
+        {QStringLiteral("external"), QT_TRANSLATE_NOOP("FlatButton", "Open")},
+        {QStringLiteral("check"), QT_TRANSLATE_NOOP("FlatButton", "Done")},
+    };
+    const auto it = names.constFind(m_icon);
+    setAccessibleName(it != names.constEnd() ? QCoreApplication::translate("FlatButton", *it) : QString());
+}
+
+bool FlatButton::event(QEvent *e)
+{
+    if (e->type() == QEvent::ToolTipChange)
+        updateAccessibleName();
+    return QAbstractButton::event(e);
+}
+
+void FlatButton::keyPressEvent(QKeyEvent *e)
+{
+    if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
+        animateClick();
+        return;
+    }
+    QAbstractButton::keyPressEvent(e);
+}
+
+void FlatButton::focusInEvent(QFocusEvent *e)
+{
+    Theme::noteFocusReason(this, e->reason());
+    QAbstractButton::focusInEvent(e);
+}
+
+void FlatButton::focusOutEvent(QFocusEvent *e)
+{
+    QAbstractButton::focusOutEvent(e);
     update();
 }
 
@@ -170,6 +242,8 @@ void FlatButton::paintEvent(QPaintEvent *)
         p.setPen(fg);
         p.drawText(QRectF(x, 0, width() - x - 4, height()), Qt::AlignVCenter | Qt::AlignLeft, text());
     }
+    if (Theme::showsFocus(this))
+        Theme::paintFocusRing(p, rect(), m_radius);
 }
 
 void FlatButton::enterEvent(QEnterEvent *e)
@@ -223,6 +297,29 @@ void Switch::paintEvent(QPaintEvent *)
     p.setPen(Qt::NoPen);
     p.setBrush(Theme::mix(c.haze, c.basalt, t));
     p.drawEllipse(QRectF(x, track.top() + 3, d, d));
+    if (Theme::showsFocus(this))
+        Theme::paintFocusRing(p, track.adjusted(-2, -2, 2, 2), track.height() / 2 + 2);
+}
+
+void Switch::keyPressEvent(QKeyEvent *e)
+{
+    if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
+        animateClick();
+        return;
+    }
+    QAbstractButton::keyPressEvent(e);
+}
+
+void Switch::focusInEvent(QFocusEvent *e)
+{
+    Theme::noteFocusReason(this, e->reason());
+    QAbstractButton::focusInEvent(e);
+}
+
+void Switch::focusOutEvent(QFocusEvent *e)
+{
+    QAbstractButton::focusOutEvent(e);
+    update();
 }
 
 // ---- MenuRow -----------------------------------------------------------------------
@@ -234,8 +331,30 @@ MenuRow::MenuRow(const QString &icon, const QString &label, const QString &value
     , m_chevron(chevron)
 {
     setText(label);
+    setAccessibleDescription(value);
     setCursor(Qt::PointingHandCursor);
     setAttribute(Qt::WA_Hover);
+}
+
+void MenuRow::keyPressEvent(QKeyEvent *e)
+{
+    if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
+        animateClick();
+        return;
+    }
+    QAbstractButton::keyPressEvent(e);
+}
+
+void MenuRow::focusInEvent(QFocusEvent *e)
+{
+    Theme::noteFocusReason(this, e->reason());
+    QAbstractButton::focusInEvent(e);
+}
+
+void MenuRow::focusOutEvent(QFocusEvent *e)
+{
+    QAbstractButton::focusOutEvent(e);
+    update();
 }
 
 void MenuRow::paintEvent(QPaintEvent *)
@@ -243,7 +362,8 @@ void MenuRow::paintEvent(QPaintEvent *)
     const auto &c = Theme::colors();
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    const bool hot = underMouse() && isEnabled();
+    // Keyboard focus looks like hover: arrows move through a menu like the mouse.
+    const bool hot = (underMouse() || Theme::showsFocus(this)) && isEnabled();
     if (hot)
         Theme::paintHover(p, QRectF(rect()), 1.0, 6);
     const double textX = m_icon.isEmpty() ? 8 : 34;
@@ -278,7 +398,61 @@ Segmented::Segmented(const QList<QPair<QString, QString>> &options, const QStrin
             m_current = i;
     setMouseTracking(true);
     setCursor(Qt::PointingHandCursor);
+    setFocusPolicy(Qt::StrongFocus);
     setFixedSize(sizeHint());
+}
+
+QAccessible::State Segmented::accessibleItemState(int index) const
+{
+    QAccessible::State s;
+    s.checkable = true;
+    s.checked = index == m_current;
+    return s;
+}
+
+void Segmented::choose(int index)
+{
+    if (index < 0 || index >= m_options.size() || index == m_current)
+        return;
+    m_current = index;
+    update();
+    Accessible::focusItem(this, index);
+    emit changed(m_options[index].first);
+}
+
+void Segmented::keyPressEvent(QKeyEvent *e)
+{
+    switch (e->key()) {
+    case Qt::Key_Left:
+    case Qt::Key_Up:
+        choose(m_current - 1);
+        break;
+    case Qt::Key_Right:
+    case Qt::Key_Down:
+        choose(m_current + 1);
+        break;
+    case Qt::Key_Home:
+        choose(0);
+        break;
+    case Qt::Key_End:
+        choose(int(m_options.size()) - 1);
+        break;
+    default:
+        QWidget::keyPressEvent(e);
+    }
+}
+
+void Segmented::focusInEvent(QFocusEvent *e)
+{
+    Theme::noteFocusReason(this, e->reason());
+    QWidget::focusInEvent(e);
+    update();
+}
+
+void Segmented::focusOutEvent(QFocusEvent *e)
+{
+    QWidget::focusOutEvent(e);
+    update();
 }
 
 QSize Segmented::sizeHint() const
@@ -317,6 +491,8 @@ void Segmented::paintEvent(QPaintEvent *)
         p.setPen(i == m_current ? c.starlight : (i == m_hover ? c.moon : c.haze));
         p.drawText(r, Qt::AlignCenter, m_options[i].second);
     }
+    if (Theme::showsFocus(this))
+        Theme::paintFocusRing(p, rect(), 7);
 }
 
 void Segmented::mouseMoveEvent(QMouseEvent *e)
@@ -333,12 +509,10 @@ void Segmented::mouseMoveEvent(QMouseEvent *e)
 
 void Segmented::mousePressEvent(QMouseEvent *e)
 {
+    setProperty("nebulaKeyFocus", false);
     for (int i = 0; i < m_options.size(); ++i)
-        if (segment(i).contains(e->position()) && i != m_current) {
-            m_current = i;
-            update();
-            emit changed(m_options[i].first);
-        }
+        if (segment(i).contains(e->position()))
+            choose(i);
 }
 
 void Segmented::leaveEvent(QEvent *)
@@ -392,6 +566,7 @@ void Toast::show(const QString &message, const QString &action, std::function<vo
     m_message = message;
     m_action = action;
     m_onAction = std::move(onAction);
+    Accessible::announce(this, action.isEmpty() ? message : message + QStringLiteral(". ") + action);
     const QFontMetricsF fm(Theme::uiFont(13, QFont::Medium));
     const int w = int(fm.horizontalAdvance(message) + (action.isEmpty() ? 0 : fm.horizontalAdvance(action) + 28) + 48);
     QWidget *host = parentWidget();

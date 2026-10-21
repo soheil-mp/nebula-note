@@ -347,6 +347,28 @@ void paintHover(QPainter &p, const QRectF &rect, double amount, double radius)
     p.restore();
 }
 
+void paintFocusRing(QPainter &p, const QRectF &rect, double radius)
+{
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setBrush(Qt::NoBrush);
+    p.setPen(QPen(withAlpha(colors().mist, 0.85), 1.5));
+    p.drawRoundedRect(rect.adjusted(0.75, 0.75, -0.75, -0.75), radius, radius);
+    p.restore();
+}
+
+bool showsFocus(const QWidget *w)
+{
+    return w->hasFocus() && w->property("nebulaKeyFocus").toBool();
+}
+
+void noteFocusReason(QWidget *w, Qt::FocusReason reason)
+{
+    const bool key = reason == Qt::TabFocusReason || reason == Qt::BacktabFocusReason || reason == Qt::ShortcutFocusReason
+                     || reason == Qt::OtherFocusReason;
+    w->setProperty("nebulaKeyFocus", key);
+}
+
 QStringList wrapLines(const QFont &font, const QString &text, double width, int maxLines)
 {
     const QFontMetricsF fm(font);

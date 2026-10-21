@@ -1,13 +1,29 @@
 #pragma once
 
+#include "ui/Accessible.h"
+
 #include <QWidget>
 
 // Open pages as tabs (Ctrl+T, Ctrl+W, Ctrl+Tab). Shown when more than one
 // tab is open.
-class TabStrip : public QWidget
+class TabStrip : public QWidget, public AccessibleItems
 {
     Q_OBJECT
 public:
+    QAccessible::Role accessibleRole() const override { return QAccessible::PageTabList; }
+    QAccessible::Role accessibleItemRole() const override { return QAccessible::PageTab; }
+    int accessibleCount() const override { return int(m_tabs.size()); }
+    QString accessibleItemName(int index) const override { return m_tabs.value(index).title; }
+    QAccessible::State accessibleItemState(int index) const override
+    {
+        QAccessible::State s;
+        s.selected = index == m_current;
+        return s;
+    }
+    QRect accessibleItemRect(int index) const override { return m_rects.value(index); }
+    void accessiblePress(int index) override { emit activated(index); }
+    int accessibleFocus() const override { return m_current; }
+
     struct Tab {
         QString title;
         QString icon; // page icon ("glyph:…", emoji) or empty

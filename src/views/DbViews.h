@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/Accessible.h"
+
 #include "core/Schema.h"
 
 #include <QDate>
@@ -31,13 +33,23 @@ struct ViewContext {
 
 // Base for the layouts. Each sizes its own height; wide layouts also report
 // the width they need so the page can scroll sideways.
-class DbView : public QWidget
+// Every layout shows the same rows: screen readers get them as a list, each
+// named by its title and the properties the view shows.
+class DbView : public QWidget, public AccessibleItems
 {
     Q_OBJECT
     friend class DbUiTests;
 public:
     explicit DbView(QWidget *parent = nullptr);
     virtual void setContext(const ViewContext &ctx);
+
+    QAccessible::Role accessibleRole() const override { return QAccessible::List; }
+    QAccessible::Role accessibleItemRole() const override { return QAccessible::ListItem; }
+    int accessibleCount() const override;
+    QString accessibleItemName(int index) const override;
+    QString accessibleItemDescription(int index) const override;
+    QRect accessibleItemRect(int index) const override;
+    void accessiblePress(int index) override;
     const ViewContext &context() const { return m_ctx; }
     virtual int contentWidth(int available) const { return available; }
     // Where a row's title sits (for editing a new row's name in place).
