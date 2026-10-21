@@ -62,6 +62,7 @@ bool isPhantom(const QTextBlock &block);
 
 // ---- conversion ---------------------------------------------------------------
 
+// Fills the document in one edit, so it is laid out once.
 void load(QTextDocument *doc, const QList<Block> &blocks, const Style &style);
 QList<Block> save(const QTextDocument *doc);
 

@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QJsonObject>
 #include <QObject>
+#include <QSet>
 #include <QSqlDatabase>
 #include <QStringList>
 
@@ -71,6 +72,7 @@ public:
     QList<Block> content(const QString &id) const;
     void setContent(const QString &id, const QList<Block> &blocks, QObject *source = nullptr);
     QJsonObject props(const QString &id) const;
+    void preloadProps(const QString &databaseId) const; // caches every row's properties in one go
     void setProps(const QString &id, const QJsonObject &props);
     void setProp(const QString &id, const QString &propId, const QJsonValue &value);
     Schema schema(const QString &databaseId) const;
@@ -249,6 +251,7 @@ private:
     void updateReminders(const QString &pageId, const QList<Block> &blocks);
     void rebuildChildIndex() const;
     void emitLater(const std::function<void()> &signal);
+    void emitLater(const QString &key, const std::function<void()> &signal); // once per key in a batch
 
     QSqlDatabase m_db;
     QString m_connection;
@@ -262,4 +265,5 @@ private:
     mutable QHash<QString, QJsonObject> m_propsCache;
     int m_batchDepth = 0;
     QList<std::function<void()>> m_pendingSignals;
+    QSet<QString> m_pendingKeys;
 };

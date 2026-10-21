@@ -1019,6 +1019,7 @@ private:
         m_layout->addWidget(caption(tr("Groups")));
         QList<RowRef> rows;
         Workspace *ws = Workspace::instance();
+        ws->preloadProps(m_body->databaseId());
         for (const PageMeta *m : ws->rows(m_body->databaseId()))
             rows.append({m, ws->props(m->id)});
         for (const RowGroup &grp : groupRows(s, *g, rows, v.groupMode, v.groupStep, v.hideEmptyGroups)) {

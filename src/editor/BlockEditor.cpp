@@ -145,10 +145,20 @@ BlockEditor::BlockEditor(QWidget *parent)
     m_handleFade.setEndValue(1.0);
     connect(&m_handleFade, &QVariantAnimation::valueChanged, viewport(), qOverload<>(&QWidget::update));
 
-    connect(document(), &QTextDocument::contentsChange, this, [this](int, int removed, int added) {
+    connect(document(), &QTextDocument::contentsChange, this, [this](int position, int removed, int added) {
+        const QTextDocument *doc = document();
+        const int first = doc->findBlock(position).blockNumber();
+        const int last = doc->findBlock(position + qMax(added, 0)).blockNumber();
+        // List numbers follow block types, depths and count; typing inside a
+        // block (a plain insert or delete) leaves them alone.
+        if (removed == added || first != last || doc->blockCount() != m_listNumbersBlockCount)
+            m_listNumbersDirty = true;
         if (m_loading || (removed == 0 && added == 0))
             return;
-        scheduleNormalize();
+        // Only the changed stretch needs normalizing (see normalize()).
+        m_dirtyFrom = m_dirtyFrom < 0 ? first : qMin(m_dirtyFrom, first);
+        m_dirtyTo = qMax(m_dirtyTo, qMax(first, last));
+        m_normalizeTimer.start();
         scheduleSave();
     });
     connect(document()->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged, this, &BlockEditor::updateHeight);
@@ -169,7 +179,25 @@ BlockEditor::BlockEditor(QWidget *parent)
             updateMentionMenu();
         m_lastCursorPos = textCursor().position();
         ensureCaretVisible();
-        viewport()->update();
+        // Repaint where the caret's decorations change (placeholders, the
+        // synced-block frame): the blocks it left and entered. Repainting the
+        // whole page on every keystroke cost more than the typing itself.
+        const QTextBlock now = textCursor().block();
+        const QTextBlock before = document()->findBlockByNumber(m_lastCursorBlock);
+        if (document()->blockCount() != m_lastCursorBlockCount || !syncOf(now).isEmpty()
+            || (before.isValid() && !syncOf(before).isEmpty())) {
+            viewport()->update();
+        } else {
+            auto band = [this](const QTextBlock &b) {
+                const QRectF r = blockRect(b);
+                return QRect(0, int(r.top()) - 16, viewport()->width(), int(r.height()) + 32);
+            };
+            viewport()->update(band(now));
+            if (before.isValid() && before != now)
+                viewport()->update(band(before));
+        }
+        m_lastCursorBlock = now.blockNumber();
+        m_lastCursorBlockCount = document()->blockCount();
     });
     connect(this, &QTextEdit::selectionChanged, this, &BlockEditor::updateFormatBar);
     if (m_ws) {
@@ -243,7 +271,7 @@ void BlockEditor::reload()
     doc->setUndoRedoEnabled(false);
     QList<Block> content = m_ws && !m_pageId.isEmpty() ? m_ws->content(m_pageId) : QList<Block>();
     ensureBlockIds(content);
-    DocumentIO::load(doc, content, m_ctx.style);
+    // The frame first: changing it after the content would lay everything out again.
     QTextFrameFormat ff = doc->rootFrame()->frameFormat();
     ff.setLeftMargin(gutter());
     ff.setRightMargin(rightMargin());
@@ -252,17 +280,25 @@ void BlockEditor::reload()
     ff.setPadding(0);
     ff.setBorder(0);
     doc->rootFrame()->setFrameFormat(ff);
+    // No page size, no layout: the page is laid out once, after the content
+    // and its margins are in (each pass costs seconds on long pages).
+    const QSizeF pageSize = doc->pageSize();
+    doc->setPageSize(QSizeF(0, 0));
+    DocumentIO::load(doc, content, m_ctx.style);
     m_loading = false;
-    scheduleEmbeds();
+    m_normalizeFull = true;
     normalize(); // margins and ids, outside the undo history
+    doc->setPageSize(pageSize);
+    m_listNumbersDirty = true;
+    scheduleEmbeds();
     doc->setUndoRedoEnabled(true);
     m_dirty = false;
     {
-        const QStringList linked = blocksLinkedPages(DocumentIO::save(doc));
+        const QStringList linked = blocksLinkedPages(content);
         m_linkedPages = QSet<QString>(linked.begin(), linked.end());
     }
     updateVisibility();
-    m_highlighter->rehighlight();
+    // (The highlighter has already seen the new content: no rehighlight().)
     QTextCursor c(doc);
     c.setPosition(qBound(0, pos, doc->characterCount() - 1));
     m_loading = true;

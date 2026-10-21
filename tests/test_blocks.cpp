@@ -391,6 +391,42 @@ private slots:
         return b;
     }
 
+    // Typing re-checks only the changed stretch of the page; the result must
+    // match a full pass (margins inside callouts, after captions, lists…).
+    void partialNormalizeMatchesFull()
+    {
+        Block callout = Block::make(BlockType::Callout, "Note");
+        Block code = Block::make(BlockType::Code, "int x;");
+        code.caption = {Span{"a caption"}};
+        fresh({Block::make(BlockType::Heading1, "Title"), para("intro"), callout, para("inside", 1), para("inside too", 1),
+               Block::make(BlockType::Quote, "quote"), para("in quote", 1), code, para("after code"),
+               Block::make(BlockType::Bullet, "one"), Block::make(BlockType::Bullet, "two", 1), para("end")});
+        auto margins = [&] {
+            QList<QList<double>> out;
+            for (QTextBlock b = doc()->begin(); b.isValid(); b = b.next()) {
+                const QTextBlockFormat f = b.blockFormat();
+                out.append({f.topMargin(), f.leftMargin(), f.rightMargin(), f.bottomMargin()});
+            }
+            return out;
+        };
+        for (const QString &at : {QStringLiteral("inside"), QStringLiteral("in quote"), QStringLiteral("after code"),
+                                  QStringLiteral("two"), QStringLiteral("Title")}) {
+            m_ed->setTextCursor(QTextCursor(caretAt(at)));
+            type(QStringLiteral("xy"));
+            key(Qt::Key_Return);
+            type(QStringLiteral("new"));
+            key(Qt::Key_Backspace);
+        }
+        // Turning a paragraph into a heading by shortcut changes its spacing.
+        m_ed->setTextCursor(QTextCursor(caretAt(QStringLiteral("end"), true)));
+        type(QStringLiteral("## "));
+        const QList<QList<double>> partial = margins();
+        m_ed->scheduleNormalize();
+        settle();
+        QCOMPARE(margins(), partial);
+        QCOMPARE(typeOf(caretAt(QStringLiteral("end"))), BlockType::Heading2);
+    }
+
     void simpleTableRoundTrip()
     {
         Block t = table({{"Planet", "Moons"}, {"Earth", "1"}, {"Mars", "2"}});

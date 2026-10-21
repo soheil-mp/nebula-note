@@ -2,6 +2,7 @@
 
 #include "Ids.h"
 
+#include <QCollator>
 #include <QCoreApplication>
 #include <QJsonArray>
 #include <QLocale>
@@ -10,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace
 {
@@ -794,6 +796,25 @@ QDateTime dateTimeOf(const QJsonValue &v)
     return d.isValid() ? QDateTime(d, QTime(0, 0)) : QDateTime();
 }
 
+qint64 dateSortKey(const QJsonValue &v)
+{
+    // Wall-clock order from the ISO text: comparing local date-times needs
+    // no time zone lookups (QDateTime's each cost a stat() of /etc/localtime).
+    const QString s = v.toString();
+    if (s.size() < 10)
+        return std::numeric_limits<qint64>::min();
+    const QDate d = QDate::fromString(QStringView(s).left(10), Qt::ISODate);
+    if (!d.isValid())
+        return std::numeric_limits<qint64>::min();
+    qint64 key = d.toJulianDay() * 86400000LL;
+    if (s.size() >= 16 && s[10] == QLatin1Char('T')) {
+        const QTime t = QTime::fromString(s.mid(11, 5), QStringLiteral("HH:mm"));
+        if (t.isValid())
+            key += t.msecsSinceStartOfDay();
+    }
+    return key;
+}
+
 QDate dateOf(const QJsonValue &v)
 {
     return dateTimeOf(v).date();
@@ -1501,6 +1522,18 @@ QList<RowRef> applyView(const Schema &schema, const View &view, QList<RowRef> ro
     QList<RowRef> out;
     out.reserve(rows.size());
     const QString needle = search.trimmed();
+    // Dates repeat across rows and formatting them is the slow part of a
+    // search: format each distinct one once.
+    QHash<QString, QString> shownDates;
+    auto shown = [&](const Property &p, const QJsonValue &v) -> QString {
+        if (p.type != PropType::Date && p.type != PropType::Created && p.type != PropType::Edited)
+            return displayValue(p, v);
+        const QString key = p.id + QChar(0x1f) + v.toString();
+        auto it = shownDates.constFind(key);
+        if (it == shownDates.constEnd())
+            it = shownDates.insert(key, displayValue(p, v));
+        return *it;
+    };
     for (RowRef &r : rows) {
         bool keep = rowMatches(schema, view.filters, view.filterAny, r);
         if (keep && !needle.isEmpty()) {
@@ -1508,8 +1541,9 @@ QList<RowRef> applyView(const Schema &schema, const View &view, QList<RowRef> ro
             for (const Property &p : schema.props) {
                 if (p.type == PropType::Button)
                     continue;
-                if (displayValue(p, rowValue(p, r)).contains(needle, Qt::CaseInsensitive)
-                    || (p.type == PropType::Title && rowValue(p, r).toString().contains(needle, Qt::CaseInsensitive))) {
+                const QJsonValue v = rowValue(p, r);
+                if (shown(p, v).contains(needle, Qt::CaseInsensitive)
+                    || (p.type == PropType::Title && v.toString().contains(needle, Qt::CaseInsensitive))) {
                     found = true;
                     break;
                 }
@@ -1519,20 +1553,121 @@ QList<RowRef> applyView(const Schema &schema, const View &view, QList<RowRef> ro
         if (keep)
             out.append(std::move(r));
     }
-    // Sort keys are computed once per row (formulas and rollups aren't free).
+    // Sort keys are computed once per row: values (formulas and rollups
+    // aren't free), and what comparing them needs (parsed dates, option
+    // positions, folded text). Parsing dates inside the comparator made a
+    // sorted view of 10,000 rows take over a second.
+    if (view.sorts.isEmpty())
+        return out;
+    struct Key {
+        QJsonValue value;
+        double number = 0;
+        qint64 date = 0;
+        QList<int> options; // select/status: one; multi-select: each
+        QString text;
+        bool empty = false;
+    };
     struct Keyed {
         RowRef row;
-        QList<QJsonValue> keys;
+        QList<Key> keys;
     };
-    QList<Keyed> keyed;
-    keyed.reserve(out.size());
     QList<const Property *> sortProps;
     for (const SortRule &s : view.sorts)
         sortProps.append(schema.prop(s.prop));
+    QCollator collator;
+    collator.setCaseSensitivity(Qt::CaseInsensitive);
+    auto makeKey = [&](const Property &p, const QJsonValue &v) {
+        Key k;
+        k.value = v;
+        const PropType rt = resultType(p);
+        if (p.type == PropType::Date || p.type == PropType::Created || p.type == PropType::Edited)
+            k.empty = dateSortKey(v) == std::numeric_limits<qint64>::min();
+        else
+            k.empty = isEmptyValue(p, v) && rt != PropType::Checkbox;
+        switch (p.type) {
+        case PropType::Number:
+        case PropType::UniqueId:
+            k.number = v.toDouble();
+            break;
+        case PropType::Checkbox:
+            k.number = v.toBool() ? 1 : 0;
+            break;
+        case PropType::Select:
+        case PropType::Status:
+            k.options = {optionIndex(p, v.toString())};
+            break;
+        case PropType::MultiSelect:
+            for (const QJsonValue &x : v.toArray())
+                k.options.append(optionIndex(p, x.toString()));
+            break;
+        case PropType::Date:
+        case PropType::Created:
+        case PropType::Edited:
+            k.date = dateSortKey(v);
+            break;
+        case PropType::Formula:
+        case PropType::Rollup:
+            k.number = v.isDouble() ? v.toDouble() : v.toBool();
+            if (resultType(p) == PropType::Date) {
+                k.date = dateSortKey(v);
+            } else {
+                k.text = displayValue(p, v);
+            }
+            break;
+        case PropType::Relation:
+        case PropType::Person:
+        case PropType::CreatedBy:
+        case PropType::EditedBy:
+        case PropType::Files:
+            k.text = displayValue(p, v);
+            break;
+        default:
+            k.text = v.toString();
+            break;
+        }
+        return k;
+    };
+    // The same order as compareValues(), from the prepared keys.
+    auto compareKeys = [&](const Property &p, const Key &a, const Key &b) -> int {
+        auto cmp = [](auto x, auto y) { return x < y ? -1 : (x > y ? 1 : 0); };
+        switch (p.type) {
+        case PropType::Number:
+        case PropType::UniqueId:
+        case PropType::Checkbox:
+            return cmp(a.number, b.number);
+        case PropType::Select:
+        case PropType::Status:
+            return a.options.value(0) - b.options.value(0);
+        case PropType::MultiSelect: {
+            const qsizetype n = qMin(a.options.size(), b.options.size());
+            for (qsizetype i = 0; i < n; ++i)
+                if (const int c = a.options[i] - b.options[i])
+                    return c;
+            return int(a.options.size() - b.options.size());
+        }
+        case PropType::Date:
+        case PropType::Created:
+        case PropType::Edited:
+            return cmp(a.date, b.date);
+        case PropType::Formula:
+        case PropType::Rollup:
+            if (a.value.isDouble() && b.value.isDouble())
+                return cmp(a.number, b.number);
+            if (a.value.isBool() || b.value.isBool())
+                return int(a.value.toBool()) - int(b.value.toBool());
+            if (resultType(p) == PropType::Date)
+                return cmp(a.date, b.date);
+            return collator.compare(a.text, b.text);
+        default:
+            return collator.compare(a.text, b.text);
+        }
+    };
+    QList<Keyed> keyed;
+    keyed.reserve(out.size());
     for (RowRef &r : out) {
         Keyed k{std::move(r), {}};
         for (const Property *p : sortProps)
-            k.keys.append(p ? rowValue(*p, k.row) : QJsonValue());
+            k.keys.append(p ? makeKey(*p, rowValue(*p, k.row)) : Key{});
         keyed.append(std::move(k));
     }
     std::stable_sort(keyed.begin(), keyed.end(), [&](const Keyed &a, const Keyed &b) {
@@ -1540,12 +1675,10 @@ QList<RowRef> applyView(const Schema &schema, const View &view, QList<RowRef> ro
             const Property *p = sortProps[i];
             if (!p)
                 continue;
-            const QJsonValue &va = a.keys[i], &vb = b.keys[i];
-            const bool ea = isEmptyValue(*p, va) && resultType(*p) != PropType::Checkbox;
-            const bool eb = isEmptyValue(*p, vb) && resultType(*p) != PropType::Checkbox;
-            if (ea != eb)
-                return eb; // empty values always sink to the bottom
-            const int c = compareValues(*p, va, vb);
+            const Key &ka = a.keys[i], &kb = b.keys[i];
+            if (ka.empty != kb.empty)
+                return kb.empty; // empty values always sink to the bottom
+            const int c = compareKeys(*p, ka, kb);
             if (c != 0)
                 return view.sorts[i].descending ? c > 0 : c < 0;
         }

@@ -191,6 +191,8 @@ private:
         QRectF rect;
         QRectF headerRect;
         QRectF addRect;
+        QRectF moreRect; // "Load more" under the cards shown so far
+        int more = 0;    // cards not shown yet
         bool collapsed = false;
     };
     struct Lane {
@@ -225,6 +227,9 @@ private:
     int m_dropIndex = -1;
     QRectF m_emptyButton;
     double m_width = 0;
+    // Cards shown per column (lane + group key); big boards load more on demand.
+    QHash<QString, int> m_columnLimit;
+    int m_hoverMore = -1;
 };
 
 class ListView : public DbView

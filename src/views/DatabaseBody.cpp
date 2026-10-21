@@ -390,6 +390,7 @@ void DatabaseBody::refresh()
         m_viewId = vs.first().id;
     const View view = currentView();
     QList<RowRef> rows;
+    ws->preloadProps(m_dbId);
     for (const PageMeta *m : ws->rows(m_dbId))
         rows.append({m, ws->props(m->id)});
     ViewContext ctx;

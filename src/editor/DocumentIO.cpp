@@ -482,7 +482,11 @@ void load(QTextDocument *doc, const QList<Block> &blocks, const Style &style)
     QList<Block> body = blocks;
     if (body.isEmpty())
         body.append(Block{});
+    // One edit: Qt lays the page out once at the end instead of after every
+    // inserted block (seconds on long pages).
+    c.beginEditBlock();
     fillFrom(c, doc->begin(), body, style, nullptr);
+    c.endEditBlock();
     doc->setUndoRedoEnabled(undo);
     doc->setModified(false);
 }

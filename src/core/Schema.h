@@ -242,6 +242,7 @@ QString formatDateValue(const QString &iso, bool longForm = false);
 // A date value in the property's date and time format, with its range end.
 QString formatDateFor(const Property &p, const QString &value);
 QDate dateOf(const QJsonValue &v);
+qint64 dateSortKey(const QJsonValue &v); // orders ISO dates/date-times; minimum when empty
 QDateTime dateTimeOf(const QJsonValue &v);
 // The end of a date range ("start/end"), or invalid.
 QDateTime dateEndOf(const QJsonValue &v);

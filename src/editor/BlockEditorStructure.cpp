@@ -129,6 +129,7 @@ QList<QTextTable *> allTables(QTextFrame *frame)
 
 void BlockEditor::scheduleNormalize()
 {
+    m_normalizeFull = true;
     m_normalizeTimer.start();
 }
 
@@ -137,6 +138,16 @@ void BlockEditor::normalize()
     if (m_loading)
         return;
     QTextDocument *doc = document();
+    // Typing (Enter and Backspace included) re-checks just the changed
+    // stretch of the page: a full pass costs milliseconds per keystroke on
+    // long pages. Pastes, structural edits and everything else that calls
+    // scheduleNormalize() re-check it all.
+    bool full = m_normalizeFull || m_dirtyFrom < 0;
+    const int dirtyFrom = m_dirtyFrom, dirtyTo = m_dirtyTo;
+    if (!full && !DocumentIO::containerOf(doc->findBlockByNumber(dirtyFrom)).isRoot())
+        full = true;
+    m_normalizeFull = false;
+    m_dirtyFrom = m_dirtyTo = -1;
     const Style &s = m_ctx.style;
     const double k = s.size / 16.0;
     struct Fix {
@@ -171,6 +182,24 @@ void BlockEditor::normalize()
     std::function<void(const Container &)> walk = [&](const Container &container) {
         const bool simpleCell = container.table && DocumentIO::isSimpleTable(container.table);
         const QList<Item> items = DocumentIO::itemsOf(doc, container);
+        // The stretch to walk: all of it, or (typing) from the last calm point
+        // before the change to the first unchanged top-level block after it.
+        const bool partial = !full && container.isRoot();
+        int begin = 0, end = -1;
+        if (partial) {
+            auto indexOf = [&](int number) {
+                auto it = std::lower_bound(items.begin(), items.end(), number, [](const Item &item, int n) {
+                    return (item.isTable() ? item.last : item.block.blockNumber()) < n;
+                });
+                return int(qMin<qsizetype>(it - items.begin(), items.size() - 1));
+            };
+            begin = indexOf(dirtyFrom);
+            end = indexOf(dirtyTo);
+            // Two top-level blocks in a row: nothing before them changes what follows.
+            while (begin > 0 && !(!items[begin - 1].isTable() && !items[begin].isTable() && depthOfItem(items[begin - 1]) == 0
+                                  && depthOfItem(items[begin]) == 0))
+                --begin;
+        }
         struct Open {
             int depth;
             BlockType type;
@@ -183,6 +212,12 @@ void BlockEditor::normalize()
         double carry = 0; // extra space owed to the next item (captions)
         bool atStart = true;
         QTextTable *prevTable = nullptr; // the item before was this table
+        if (begin > 0) {
+            const QTextBlock before = items[begin - 1].block;
+            prev = typeOf(before);
+            carry = (prev == BlockType::Code && !captionOf(before).isEmpty()) ? 24 * k : 0;
+            atStart = false;
+        }
         auto closeTo = [&](int depth) {
             double extra = 0;
             while (!stack.isEmpty() && stack.last().depth >= depth) {
@@ -194,8 +229,15 @@ void BlockEditor::normalize()
             }
             return extra;
         };
-        for (int i = 0; i < items.size(); ++i) {
+        for (int i = begin; i < items.size(); ++i) {
             const Item &item = items[i];
+            const qsizetype fixesBefore = fixes.size();
+            // Past the change, a top-level block after another that needs no
+            // fixing: everything below is as it was.
+            auto settled = [&] {
+                return partial && i > end && i > begin && fixes.size() == fixesBefore && !items[i - 1].isTable()
+                       && depthOfItem(items[i - 1]) == 0 && depthOf(item.block) == 0;
+            };
             if (item.isTable()) {
                 QTextTable *t = item.table;
                 const BlockType tt = DocumentIO::isColumns(t) ? BlockType::ColumnList : BlockType::Table;
@@ -327,6 +369,8 @@ void BlockEditor::normalize()
             carry = (t == BlockType::Code && !captionOf(blk).isEmpty()) ? 24 * k : 0;
             prev = t;
             atStart = false;
+            if (settled())
+                break;
         }
     };
     walk(Container{});
@@ -756,7 +800,13 @@ int BlockEditor::numberFor(const QTextBlock &block) const
 
 QHash<int, int> BlockEditor::listNumbers() const
 {
-    QHash<int, int> numbers;
+    // Painted on every frame; the numbering only changes with the content.
+    if (!m_listNumbersDirty)
+        return m_listNumbers;
+    m_listNumbersDirty = false;
+    m_listNumbersBlockCount = document()->blockCount();
+    QHash<int, int> &numbers = m_listNumbers;
+    numbers.clear();
     const QTextDocument *doc = document();
     std::function<void(const Container &)> walk = [&](const Container &container) {
         QList<int> counters(12, 0);

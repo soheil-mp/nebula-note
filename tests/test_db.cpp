@@ -834,6 +834,77 @@ private slots:
         o.createdAfter = m_ws->page(other)->created;
         QCOMPARE(m_ws->search("spiral", o).size(), 2);
     }
+
+    // ---- speed paths (they must keep the same results) ------------------------
+
+    void bulkRowsKeepOrderAndAnnounceOnce()
+    {
+        const QString db = m_ws->createDatabase({}, "Bulk", Schema::basic());
+        QSignalSpy tree(m_ws, &Workspace::treeChanged);
+        QSignalSpy props(m_ws, &Workspace::propsChanged);
+        QStringList made;
+        m_ws->batch([&] {
+            for (int i = 0; i < 300; ++i)
+                made << m_ws->createRow(db, QStringLiteral("Row %1").arg(i));
+        });
+        // One announcement per kind, not one per row.
+        QCOMPARE(tree.count(), 1);
+        QCOMPARE(props.count(), 1);
+        QStringList order;
+        for (const PageMeta *m : m_ws->rows(db))
+            order << m->id;
+        QCOMPARE(order, made);
+        // The index stays right after moves and more inserts.
+        m_ws->moveRow(made[5], made[0]);
+        const QString late = m_ws->createRow(db, "Late");
+        const QList<const PageMeta *> rows = m_ws->rows(db);
+        QCOMPARE(rows.first()->id, made[5]);
+        QCOMPARE(rows.last()->id, late);
+        QCOMPARE(rows.size(), 301);
+        // Pages after a database keep their place among its siblings.
+        const QString page = m_ws->createPage({}, "After");
+        QCOMPARE(m_ws->children({}).last()->id, page);
+        // Every row's properties load in one go and match single reads.
+        m_ws->setProp(made[7], "tags", QJsonArray{"x"});
+        m_ws->preloadProps(db);
+        QCOMPARE(m_ws->props(made[7]).value("tags").toArray().size(), 1);
+    }
+
+    void sortsByDatesTextAndOptions()
+    {
+        Schema s;
+        s.props << makeProp("title", "Name", PropType::Title) << makeProp("due", "Due", PropType::Date);
+        Property pr = makeProp("prio", "Priority", PropType::Select);
+        pr.options = {{"lo", "Low", 0, 0}, {"hi", "High", 0, 0}};
+        s.props << pr;
+        s.views << Schema::makeView(s, ViewType::Table);
+        const QString db = m_ws->createDatabase({}, "Sorts", s);
+        const QString a = m_ws->createRow(db, "beta", {{"due", "2026-03-01"}, {"prio", "hi"}});
+        const QString b = m_ws->createRow(db, "Alpha", {{"due", "2026-01-15T09:30"}, {"prio", "lo"}});
+        const QString c = m_ws->createRow(db, "gamma", {{"prio", "hi"}});
+        const QString d = m_ws->createRow(db, "delta", {{"due", "2026-01-15"}});
+        QList<RowRef> rows;
+        for (const PageMeta *m : m_ws->rows(db))
+            rows.append({m, m_ws->props(m->id)});
+        auto ids = [&](const View &v) {
+            QStringList out;
+            for (const RowRef &r : applyView(s, v, rows))
+                out << r.meta->id;
+            return out;
+        };
+        View v = s.views.first();
+        v.sorts = {{"due", false}};
+        // Dates in order, a date before a time on the same day, empty last.
+        QCOMPARE(ids(v), QStringList({d, b, a, c}));
+        v.sorts = {{"due", true}};
+        QCOMPARE(ids(v), QStringList({a, b, d, c}));
+        // Text ignores case.
+        v.sorts = {{"title", false}};
+        QCOMPARE(ids(v), QStringList({b, a, d, c}));
+        // Options sort in their own order, then by the next rule.
+        v.sorts = {{"prio", false}, {"title", true}};
+        QCOMPARE(ids(v), QStringList({b, c, a, d}));
+    }
 };
 
 int main(int argc, char **argv)

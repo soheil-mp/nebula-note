@@ -376,6 +376,42 @@ private slots:
         settle();
     }
 
+    void boardLoadsMoreCards()
+    {
+        resetView(ViewType::Board);
+        setView([](View &v) { v.groupBy = QStringLiteral("status"); });
+        QStringList extra;
+        m_ws->batch([&] {
+            for (int i = 0; i < 120; ++i)
+                extra << m_ws->createRow(m_db, QStringLiteral("Card %1").arg(i), {{"status", "doing"}});
+        });
+        m_body->refresh();
+        BoardView *b = active<BoardView>();
+        QVERIFY(b);
+        int col = -1;
+        for (int i = 0; i < b->m_columns.size(); ++i)
+            if (b->m_columns[i].group.key == QLatin1String("doing"))
+                col = i;
+        QVERIFY(col >= 0);
+        // A big column shows its first cards and offers the rest.
+        QCOMPARE(b->m_columns[col].cards.size(), 50);
+        const int total = int(b->m_columns[col].cards.size()) + b->m_columns[col].more;
+        QVERIFY(total >= 120);
+        const QPointF more = b->m_columns[col].moreRect.center();
+        hover(b, more);
+        send(b, QEvent::MouseButtonPress, more, Qt::LeftButton, Qt::LeftButton);
+        send(b, QEvent::MouseButtonRelease, more, Qt::LeftButton, Qt::NoButton);
+        QCOMPARE(b->m_columns[col].cards.size(), 100);
+        QCOMPARE(b->m_columns[col].cards.size() + b->m_columns[col].more, total);
+        // Painting skips cards outside the visible area without breaking anything.
+        b->repaint(0, 0, b->width(), 300);
+        m_ws->batch([&] {
+            for (const QString &id : extra)
+                m_ws->trash(id);
+        });
+        settle();
+    }
+
     void boardGroupsByMultiSelectWithLanes()
     {
         resetView(ViewType::Board);
@@ -685,17 +721,19 @@ private slots:
                     return b;
             return nullptr;
         };
-        QVERIFY(button(QStringLiteral("Add filter rule")));
+        // Rebuilt rows show after a queued show event: wait for them.
+        QTRY_VERIFY(button(QStringLiteral("Add filter rule")));
         button(QStringLiteral("Add filter rule"))->click();
         settle(30);
         QCOMPARE(m_body->currentView().filters.size(), 1);
-        QVERIFY(button(QStringLiteral("Add filter group")));
+        QTRY_VERIFY(button(QStringLiteral("Add filter group")));
         button(QStringLiteral("Add filter group"))->click();
         settle(30);
         const View v = m_body->currentView();
         QCOMPARE(v.filters.size(), 2);
         QVERIFY(v.filters[1].group);
         QCOMPARE(v.filters[1].rules.size(), 1);
+        QTRY_VERIFY(button(QStringLiteral("Delete filter")));
         button(QStringLiteral("Delete filter"))->click();
         settle(30);
         QVERIFY(m_body->currentView().filters.isEmpty());

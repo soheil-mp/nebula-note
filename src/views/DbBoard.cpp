@@ -16,7 +16,9 @@
 #include <QJsonArray>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QLocale>
 #include <QPainter>
+#include <QPaintEvent>
 #include <QPainterPath>
 
 #include <cmath>
@@ -29,6 +31,14 @@ constexpr double kGap = 14;
 constexpr double kHeaderH = 38;
 constexpr double kLaneH = 36;
 constexpr double kFoldedW = 44;
+// Like Notion: a column shows this many cards, then "Load more". Laying out
+// and painting ten thousand cards took seconds.
+constexpr int kCardsPerColumn = 50;
+
+QString columnKey(const QString &lane, const QString &group)
+{
+    return lane + QChar(0x1f) + group;
+}
 } // namespace
 
 BoardView::BoardView(QWidget *parent)
@@ -143,12 +153,21 @@ void BoardView::layoutBoard()
             col.headerRect = QRectF(xs[gi], 0, ws[gi], kHeaderH);
             double cy = y;
             if (!laneFolded && !col.collapsed) {
+                const int limit = m_columnLimit.value(columnKey(lane.group.key, col.group.key), kCardsPerColumn);
                 for (int r : col.group.rows) {
                     if (!inLane.contains(r))
                         continue;
+                    if (col.cards.size() >= limit) {
+                        ++col.more;
+                        continue;
+                    }
                     const double h = cardHeight(m_ctx.rows[r]);
                     col.cards.append(Card{r, QRectF(xs[gi], cy, colW, h)});
                     cy += h + 8;
+                }
+                if (col.more > 0) {
+                    col.moreRect = QRectF(xs[gi], cy, colW, 32);
+                    cy += 36;
                 }
                 col.addRect = QRectF(xs[gi], cy, colW, 32);
                 cy += 40;
@@ -234,8 +253,10 @@ void BoardView::paintCard(QPainter &p, const QRectF &rect, const RowRef &r, bool
     p.restore();
 }
 
-void BoardView::paintEvent(QPaintEvent *)
+void BoardView::paintEvent(QPaintEvent *e)
 {
+    // Only cards in the exposed area are painted.
+    const QRectF exposed = QRectF(e->rect()).adjusted(-24, -24, 24, 24);
     const auto &c = Theme::colors();
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
@@ -345,7 +366,20 @@ void BoardView::paintEvent(QPaintEvent *)
                 p.drawRoundedRect(card.rect.adjusted(1, 1, -1, -1), 10, 10);
                 continue;
             }
+            if (!card.rect.intersects(exposed))
+                continue;
             paintCard(p, card.rect, m_ctx.rows[card.row], m_hoverCard == QPair<int, int>(ci, k), false);
+        }
+        if (col.more > 0) {
+            const bool hoverMore = m_hoverMore == ci;
+            if (hoverMore)
+                Theme::paintHover(p, col.moreRect, 1.0, 7);
+            Icons::paint(p, QRectF(col.moreRect.left() + 10, col.moreRect.center().y() - 7, 14, 14), QStringLiteral("chevron-down"),
+                         hoverMore ? c.moon : c.fog);
+            p.setFont(Theme::uiFont(13.5));
+            p.setPen(hoverMore ? c.moon : c.fog);
+            p.drawText(col.moreRect.adjusted(32, 0, 0, 0), Qt::AlignVCenter,
+                       tr("Load more (%1)").arg(QLocale().toString(col.more)));
         }
         if (m_dragging && ci == m_dropColumn) {
             const double y = col.cards.isEmpty()                ? col.rect.top() + 2
@@ -421,7 +455,7 @@ void BoardView::mouseMoveEvent(QMouseEvent *e)
         return;
     }
     QPair<int, int> hover{-1, -1};
-    int hoverAdd = -1, hoverHeader = -1, hoverLane = -1;
+    int hoverAdd = -1, hoverHeader = -1, hoverLane = -1, hoverMore = -1;
     for (int ci = 0; ci < m_columns.size(); ++ci) {
         const Column &col = m_columns[ci];
         for (int k = 0; k < col.cards.size(); ++k)
@@ -429,6 +463,8 @@ void BoardView::mouseMoveEvent(QMouseEvent *e)
                 hover = {ci, k};
         if (col.addRect.contains(pos))
             hoverAdd = ci;
+        if (col.more > 0 && col.moreRect.contains(pos))
+            hoverMore = ci;
         if (col.lane == 0 && (col.headerRect.contains(pos) || (col.collapsed && QRectF(col.rect.left(), 0, col.rect.width(), col.rect.bottom()).contains(pos))))
             hoverHeader = ci;
     }
@@ -436,15 +472,18 @@ void BoardView::mouseMoveEvent(QMouseEvent *e)
         if (m_laneProp && m_lanes[li].headerRect.contains(pos))
             hoverLane = li;
     const bool addGroup = m_addGroupRect.contains(pos);
-    if (hover != m_hoverCard || hoverAdd != m_hoverAdd || addGroup != m_hoverAddGroup || hoverHeader != m_hoverHeader || hoverLane != m_hoverLane) {
+    if (hover != m_hoverCard || hoverAdd != m_hoverAdd || addGroup != m_hoverAddGroup || hoverHeader != m_hoverHeader || hoverLane != m_hoverLane
+        || hoverMore != m_hoverMore) {
         m_hoverCard = hover;
         m_hoverAdd = hoverAdd;
+        m_hoverMore = hoverMore;
         m_hoverAddGroup = addGroup;
         m_hoverHeader = hoverHeader;
         m_hoverLane = hoverLane;
         update();
     }
-    setCursor(hover.first >= 0 || hoverAdd >= 0 || addGroup || hoverHeader >= 0 || hoverLane >= 0 || (!m_groupProp && m_emptyButton.contains(pos))
+    setCursor(hover.first >= 0 || hoverAdd >= 0 || hoverMore >= 0 || addGroup || hoverHeader >= 0 || hoverLane >= 0
+                      || (!m_groupProp && m_emptyButton.contains(pos))
                   ? Qt::PointingHandCursor
                   : Qt::ArrowCursor);
 }
@@ -531,6 +570,16 @@ void BoardView::mousePressEvent(QMouseEvent *e)
         }
         return;
     }
+    if (m_hoverMore >= 0) {
+        const Column &col = m_columns[m_hoverMore];
+        const QString key = columnKey(m_lanes.value(col.lane).group.key, col.group.key);
+        m_columnLimit[key] = int(col.cards.size()) + kCardsPerColumn;
+        m_hoverMore = -1;
+        layoutBoard();
+        emit geometryNeedsUpdate();
+        update();
+        return;
+    }
     if (m_hoverAdd >= 0) {
         const Column &col = m_columns[m_hoverAdd];
         QJsonObject props = groupValues(m_groupProp, col.group.key);
@@ -595,7 +644,7 @@ void BoardView::mouseReleaseEvent(QMouseEvent *)
 void BoardView::leaveEvent(QEvent *)
 {
     m_hoverCard = {-1, -1};
-    m_hoverAdd = m_hoverHeader = m_hoverLane = -1;
+    m_hoverAdd = m_hoverHeader = m_hoverLane = m_hoverMore = -1;
     m_hoverAddGroup = false;
     update();
 }

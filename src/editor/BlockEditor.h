@@ -169,7 +169,7 @@ private:
     QPair<int, int> selectedBlockRange() const;
     QPair<int, int> withChildren(QPair<int, int> range) const;
     int numberFor(const QTextBlock &block) const;  // numbered list position
-    QHash<int, int> listNumbers() const;           // block number → list number
+    QHash<int, int> listNumbers() const;           // block number → list number (cached)
     QTextBlock previousInContainer(const QTextBlock &block) const; // previous block item, skipping tables
     QTextBlock nextInContainer(const QTextBlock &block) const;
     int itemDepth(const QTextBlock &first) const; // depth of the item starting at a block (tables too)
@@ -312,10 +312,20 @@ private:
     QPointer<QScrollArea> m_scrollArea;
     QPointer<QWidget> m_host;
     bool m_loading = false;
+    // normalize(): typing re-checks only the changed blocks; anything else
+    // (pastes, structural edits, resizes) re-checks the page.
+    int m_dirtyFrom = -1;
+    int m_dirtyTo = -1;
+    bool m_normalizeFull = true;
+    mutable QHash<int, int> m_listNumbers;
+    mutable bool m_listNumbersDirty = true;
+    mutable int m_listNumbersBlockCount = -1;
     bool m_dirty = false;
     QSet<QString> m_linkedPages; // pages this body mentions or links to
     int m_lastHeight = -1;
     int m_lastCursorPos = 0;
+    int m_lastCursorBlock = -1;
+    int m_lastCursorBlockCount = -1;
 
     QTimer m_saveTimer;
     QTimer m_normalizeTimer;

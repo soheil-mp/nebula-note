@@ -218,6 +218,7 @@ void BlockEditor::insertFromMimeData(const QMimeData *source)
 {
     if (isReadOnly())
         return;
+    m_normalizeFull = true; // pasted blocks may repeat ids from elsewhere on the page
     const QTextBlock blk = textCursor().block();
     const BlockType type = typeOf(blk);
     if (type == BlockType::Code) {

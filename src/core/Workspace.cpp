@@ -237,10 +237,23 @@ void Workspace::rebuildChildIndex() const
 
 void Workspace::emitLater(const std::function<void()> &signal)
 {
-    if (m_batchDepth > 0)
-        m_pendingSignals.append(signal);
-    else
+    emitLater(QString(), signal);
+}
+
+void Workspace::emitLater(const QString &key, const std::function<void()> &signal)
+{
+    if (m_batchDepth == 0) {
         signal();
+        return;
+    }
+    // In a batch, the same announcement goes out once: importing ten
+    // thousand rows shouldn't rebuild the sidebar ten thousand times.
+    if (!key.isEmpty()) {
+        if (m_pendingKeys.contains(key))
+            return;
+        m_pendingKeys.insert(key);
+    }
+    m_pendingSignals.append(signal);
 }
 
 void Workspace::batch(const std::function<void()> &fn)
@@ -252,6 +265,7 @@ void Workspace::batch(const std::function<void()> &fn)
         m_db.commit();
         const auto pending = std::move(m_pendingSignals);
         m_pendingSignals.clear();
+        m_pendingKeys.clear();
         for (const auto &s : pending)
             s();
     }
@@ -406,9 +420,19 @@ bool Workspace::isInside(const QString &id, const QString &ancestorId) const
 double Workspace::sortAfter(const QString &parentId, const QString &afterId, bool rowsOnly) const
 {
     rebuildChildIndex();
+    const QStringList kids = m_children.value(parentId);
+    if (afterId.isEmpty()) {
+        // At the end: after the last sibling of the same kind.
+        for (auto it = kids.crbegin(); it != kids.crend(); ++it) {
+            const PageMeta &m = *m_pages.constFind(*it);
+            if ((m.kind == PageKind::Row) == rowsOnly)
+                return m.sort + 1.0;
+        }
+        return 1.0;
+    }
     QList<double> sorts;
     int afterIndex = -1;
-    for (const QString &c : m_children.value(parentId)) {
+    for (const QString &c : kids) {
         const PageMeta &m = *m_pages.constFind(c);
         if ((m.kind == PageKind::Row) != rowsOnly)
             continue;
@@ -438,7 +462,16 @@ QString Workspace::insertPage(const PageMeta &meta, const QString &content, cons
     m_pages.insert(meta.id, meta);
     m_schemaCache.remove(meta.id);
     m_propsCache.remove(meta.id);
-    m_childIndexDirty = true;
+    if (!m_childIndexDirty) {
+        // Keep the index: the new id goes where its sort key belongs.
+        // (Rebuilding it per insert made importing 10k rows take minutes.)
+        QStringList &kids = m_children[meta.parentId];
+        const auto pos = std::upper_bound(kids.begin(), kids.end(), meta.id, [this](const QString &a, const QString &b) {
+            const PageMeta &x = *m_pages.constFind(a), &y = *m_pages.constFind(b);
+            return x.sort != y.sort ? x.sort < y.sort : x.created < y.created;
+        });
+        kids.insert(pos, meta.id);
+    }
     updateLinks(meta.id, blocks);
     return meta.id;
 }
@@ -457,7 +490,7 @@ QString Workspace::createPage(const QString &parentId, const QString &title, con
     ensureBlockIds(blocks);
     const QString id = insertPage(m, blocksToJsonString(blocks), {}, nullptr);
     if (!id.isEmpty())
-        emitLater([this] { emit treeChanged(); });
+        emitLater(QStringLiteral("tree"), [this] { emit treeChanged(); });
     return id;
 }
 
@@ -473,7 +506,7 @@ QString Workspace::createDatabase(const QString &parentId, const QString &title,
     m.created = m.updated = Ids::now();
     const QString id = insertPage(m, QStringLiteral("[]"), {}, &schema);
     if (!id.isEmpty())
-        emitLater([this] { emit treeChanged(); });
+        emitLater(QStringLiteral("tree"), [this] { emit treeChanged(); });
     return id;
 }
 
@@ -505,7 +538,7 @@ QString Workspace::createRow(const QString &databaseId, const QString &title, co
     for (const auto &r : relations)
         syncRelation(id, r.first, {}, r.second, 0);
     updateRowReminders(id, values);
-    emitLater([this, databaseId] {
+    emitLater(QStringLiteral("tree+props:") + databaseId, [this, databaseId] {
         emit treeChanged();
         emit propsChanged(databaseId);
     });
@@ -569,7 +602,7 @@ QString Workspace::duplicate(const QString &id)
                        schemaJson.isEmpty() ? nullptr : &schema);
             exec(QStringLiteral("UPDATE pages SET options=? WHERE id=?"), {q.value(3).toString(), m.id});
         }
-        emitLater([this] { emit treeChanged(); });
+        emitLater(QStringLiteral("tree"), [this] { emit treeChanged(); });
     });
     return remap.value(id);
 }
@@ -660,7 +693,7 @@ QList<Block> Workspace::collapseSynced(const QString &pageId, const QList<Block>
                         if (other == pageId)
                             continue;
                         exec(QStringLiteral("UPDATE pages SET plain=? WHERE id=?"), {blocksPlainText(content(other)), other});
-                        emitLater([this, other] { emit contentChanged(other, this); });
+                        emitLater(QStringLiteral("content:") + other, [this, other] { emit contentChanged(other, this); });
                     }
                 }
             } else
@@ -969,7 +1002,7 @@ void Workspace::updateReminders(const QString &pageId, const QList<Block> &block
                 stale.append(q.value(0).toString());
     for (const QString &id : stale)
         exec(QStringLiteral("DELETE FROM reminders WHERE id=?"), {id});
-    emitLater([this] { emit remindersChanged(); });
+    emitLater(QStringLiteral("reminders"), [this] { emit remindersChanged(); });
 }
 
 QList<Workspace::Reminder> Workspace::reminders(bool includeDone) const
@@ -1093,6 +1126,30 @@ QJsonObject Workspace::props(const QString &id) const
     return {};
 }
 
+void Workspace::preloadProps(const QString &databaseId) const
+{
+    // One query for a database's rows instead of one per row, and none
+    // when they're all cached already (the usual refresh after an edit).
+    int missing = 0;
+    for (const PageMeta *m : rows(databaseId))
+        missing += !m_propsCache.contains(m->id);
+    if (missing < 32)
+        return; // a few single reads are cheaper than reading them all
+    QSqlQuery q(m_db);
+    q.setForwardOnly(true);
+    q.prepare(QStringLiteral("SELECT id, props FROM pages WHERE parent_id=?"));
+    q.addBindValue(databaseId);
+    if (!q.exec())
+        return;
+    if (m_propsCache.size() > 20000)
+        m_propsCache.clear();
+    while (q.next()) {
+        const QString id = q.value(0).toString();
+        if (!m_propsCache.contains(id))
+            m_propsCache.insert(id, fromJsonString(q.value(1).toString()));
+    }
+}
+
 void Workspace::writePropsRaw(const QString &id, const QJsonObject &props)
 {
     auto it = m_pages.find(id);
@@ -1102,7 +1159,7 @@ void Workspace::writePropsRaw(const QString &id, const QJsonObject &props)
     exec(QStringLiteral("UPDATE pages SET props=?, updated=? WHERE id=?"), {toJsonString(props), it->updated, id});
     m_propsCache.insert(id, props);
     const QString parent = it->parentId;
-    emitLater([this, id, parent] {
+    emitLater(QStringLiteral("props:%1|%2").arg(id, parent), [this, id, parent] {
         emit propsChanged(id);
         if (!parent.isEmpty())
             emit propsChanged(parent);
@@ -1212,7 +1269,7 @@ void Workspace::updateRowReminders(const QString &id, const QJsonObject &values)
                 stale.append(q.value(0).toString());
     for (const QString &rid : stale)
         exec(QStringLiteral("DELETE FROM reminders WHERE id=?"), {rid});
-    emitLater([this] { emit remindersChanged(); });
+    emitLater(QStringLiteral("reminders"), [this] { emit remindersChanged(); });
 }
 
 void Workspace::setProp(const QString &id, const QString &propId, const QJsonValue &value)
@@ -1295,7 +1352,7 @@ void Workspace::setSchema(const QString &databaseId, const Schema &schema)
         });
     }
     touch(databaseId);
-    emitLater([this, databaseId] { emit schemaChanged(databaseId); });
+    emitLater(QStringLiteral("schema:") + databaseId, [this, databaseId] { emit schemaChanged(databaseId); });
 }
 
 QString Workspace::addRelation(const QString &databaseId, const QString &name, const QString &targetDb, bool twoWay,
@@ -1471,7 +1528,7 @@ void Workspace::setOptions(const QString &id, const PageOptions &options)
     if (!exists(id))
         return;
     exec(QStringLiteral("UPDATE pages SET options=? WHERE id=?"), {toJsonString(options.toJson()), id});
-    emitLater([this, id] { emit pageChanged(id); });
+    emitLater(QStringLiteral("page:") + id, [this, id] { emit pageChanged(id); });
 }
 
 void Workspace::convertToDatabase(const QString &id, const Schema &schema)
@@ -1501,7 +1558,7 @@ void Workspace::setTitle(const QString &id, const QString &title)
     exec(QStringLiteral("UPDATE pages SET title=?, updated=? WHERE id=?"), {title, it->updated, id});
     const QString parent = it->parentId;
     const bool row = it->kind == PageKind::Row;
-    emitLater([this, id, parent, row] {
+    emitLater(QStringLiteral("page+props:%1|%2").arg(id, row ? parent : QString()), [this, id, parent, row] {
         emit pageChanged(id);
         if (row)
             emit propsChanged(parent);
@@ -1518,7 +1575,7 @@ void Workspace::setIcon(const QString &id, const QString &icon)
     touch(id);
     const QString parent = it->parentId;
     const bool row = it->kind == PageKind::Row;
-    emitLater([this, id, parent, row] {
+    emitLater(QStringLiteral("page+props:%1|%2").arg(id, row ? parent : QString()), [this, id, parent, row] {
         emit pageChanged(id);
         if (row)
             emit propsChanged(parent);
@@ -1536,7 +1593,7 @@ void Workspace::setCover(const QString &id, const QString &cover, double positio
     touch(id);
     const QString parent = it->parentId;
     const bool row = it->kind == PageKind::Row;
-    emitLater([this, id, parent, row] {
+    emitLater(QStringLiteral("page+props:%1|%2").arg(id, row ? parent : QString()), [this, id, parent, row] {
         emit pageChanged(id);
         if (row)
             emit propsChanged(parent);
@@ -1550,7 +1607,7 @@ void Workspace::setCoverPosition(const QString &id, double position)
         return;
     it->coverPos = qBound(0.0, position, 1.0);
     exec(QStringLiteral("UPDATE pages SET cover_pos=? WHERE id=?"), {it->coverPos, id});
-    emitLater([this, id] { emit pageChanged(id); });
+    emitLater(QStringLiteral("page:") + id, [this, id] { emit pageChanged(id); });
 }
 
 void Workspace::setFavorite(const QString &id, bool favorite)
@@ -1587,7 +1644,7 @@ void Workspace::moveFavorite(const QString &id, int toIndex)
             m_pages[favs[i]->id].favorite = i + 1;
             exec(QStringLiteral("UPDATE pages SET favorite=? WHERE id=?"), {i + 1, favs[i]->id});
         }
-        emitLater([this] { emit favoritesChanged(); });
+        emitLater(QStringLiteral("favorites"), [this] { emit favoritesChanged(); });
     });
 }
 
@@ -1629,7 +1686,7 @@ bool Workspace::move(const QString &id, const QString &newParentId, int index)
     it->sort = sort;
     exec(QStringLiteral("UPDATE pages SET parent_id=?, sort=? WHERE id=?"), {newParentId, sort, id});
     m_childIndexDirty = true;
-    emitLater([this] { emit treeChanged(); });
+    emitLater(QStringLiteral("tree"), [this] { emit treeChanged(); });
     return true;
 }
 
@@ -1657,7 +1714,7 @@ void Workspace::moveRow(const QString &id, const QString &beforeId)
     exec(QStringLiteral("UPDATE pages SET sort=? WHERE id=?"), {sort, id});
     m_childIndexDirty = true;
     const QString parent = it->parentId;
-    emitLater([this, parent] { emit propsChanged(parent); });
+    emitLater(QStringLiteral("props:") + parent, [this, parent] { emit propsChanged(parent); });
 }
 
 // ---- trash ---------------------------------------------------------------------

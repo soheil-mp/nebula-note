@@ -217,6 +217,11 @@ int main(int argc, char **argv)
     QApplication::setApplicationDisplayName(QStringLiteral("Nebula Note"));
     QApplication::setApplicationVersion(QStringLiteral(NEBULA_VERSION));
     QApplication::setDesktopFileName(QStringLiteral(NEBULA_APP_ID));
+    // Without TZ, glibc re-reads /etc/localtime on every local-time
+    // conversion: dates in databases (sorting, filters, calendars) went at
+    // half speed. Pointing TZ at the same file keeps the zone and caches it.
+    if (qEnvironmentVariableIsEmpty("TZ") && QFileInfo::exists(QStringLiteral("/etc/localtime")))
+        qputenv("TZ", ":/etc/localtime");
     // Embedded web players (Qt WebEngine) share the window's GL context.
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     QApplication app(argc, argv);

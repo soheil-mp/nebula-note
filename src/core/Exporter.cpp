@@ -490,6 +490,7 @@ QString databaseHtml(const HtmlCtx &c, const QString &id, const View *viewOverri
         return {};
     const View &view = viewOverride ? *viewOverride : schema.views.first();
     QList<RowRef> rows;
+    c.ws.preloadProps(id);
     for (const PageMeta *m : c.ws.rows(id))
         rows.append({m, c.ws.props(m->id)});
     rows = applyView(schema, view, rows);
