@@ -28,11 +28,25 @@ for arg in "$@"; do
     esac
 done
 
+deps_hint() {
+    echo "Install the build dependencies first:"
+    if command -v apt-get >/dev/null; then
+        echo "  sudo apt install cmake ninja-build g++ qt6-base-dev qt6-svg-dev zlib1g-dev libkf6windowsystem-dev qt6-webengine-dev"
+    elif command -v dnf >/dev/null; then
+        echo "  sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtsvg-devel zlib-devel kf6-kwindowsystem-devel qt6-qtwebengine-devel"
+    elif command -v pacman >/dev/null; then
+        echo "  sudo pacman -S --needed cmake ninja gcc qt6-base qt6-svg zlib kwindowsystem qt6-webengine"
+    elif command -v zypper >/dev/null; then
+        echo "  sudo zypper install cmake ninja gcc-c++ qt6-base-devel qt6-svg-devel zlib-devel kf6-kwindowsystem-devel qt6-webengine-devel"
+    else
+        echo "  CMake, Ninja, a C++20 compiler, Qt 6.5+ (Base, Svg; optionally WebEngine), zlib, optionally KF6 WindowSystem"
+    fi
+    echo "(or build the Flatpak: see packaging/flatpak/io.github.soheil_mp.NebulaNote.yml)"
+}
+
 if ! command -v cmake >/dev/null; then
-    cat >&2 <<'MSG'
-CMake is missing. Install the build dependencies first:
-  sudo apt install cmake ninja-build g++ qt6-base-dev qt6-svg-dev zlib1g-dev libkf6windowsystem-dev
-MSG
+    echo "CMake is missing." >&2
+    deps_hint >&2
     exit 1
 fi
 
@@ -73,9 +87,13 @@ if [[ ! -e "$syslib/cmake/Qt6WebEngineWidgets/Qt6WebEngineWidgetsConfig.cmake" ]
 fi
 
 echo "==> Configuring"
-cmake -S . -B "$BUILD_DIR" "${generator[@]}" "${extra[@]}" \
+if ! cmake -S . -B "$BUILD_DIR" "${generator[@]}" "${extra[@]}" \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX="$PREFIX" >/dev/null
+    -DCMAKE_INSTALL_PREFIX="$PREFIX" >/dev/null; then
+    echo "Configuring failed (is Qt 6 installed?)." >&2
+    deps_hint >&2
+    exit 1
+fi
 echo "==> Building"
 cmake --build "$BUILD_DIR" --parallel --target nebula-note
 echo "==> Installing to $PREFIX"

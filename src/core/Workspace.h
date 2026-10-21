@@ -266,6 +266,7 @@ private:
     void dropBlocks(const QString &id);
     void updateSyncedRefs(const QString &id, const QList<Block> &stored);
     void markSearchDirty(const QString &id);
+    QString titleKey(const QString &id) const;
     double sortAfter(const QString &parentId, const QString &afterId, bool rowsOnly) const;
     void touch(const QString &id);
     void updateLinks(const QString &id, const QList<Block> &blocks);
@@ -289,6 +290,7 @@ private:
     mutable bool m_childIndexDirty = true;
     mutable QHash<QString, std::shared_ptr<Schema>> m_schemaCache;
     mutable QHash<QString, QJsonObject> m_propsCache;
+    mutable QHash<QString, QString> m_titleKeys; // id → lower-cased title
     // Stored blocks of recently read or written pages (newest last).
     mutable QHash<QString, QList<StoredBlock>> m_blockCache;
     mutable QStringList m_blockCacheOrder;

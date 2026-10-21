@@ -232,6 +232,7 @@ void Workspace::setName(const QString &name)
 void Workspace::loadMeta()
 {
     m_pages.clear();
+    m_titleKeys.clear();
     QSqlQuery q(m_db);
     q.exec(QStringLiteral("SELECT id, parent_id, kind, title, icon, cover, cover_pos, sort, favorite, created, updated, "
                           "visited, trashed FROM pages"));
@@ -497,6 +498,7 @@ QString Workspace::insertPage(const PageMeta &meta, const QList<Block> &stored, 
     m_pages.insert(meta.id, meta);
     m_schemaCache.remove(meta.id);
     m_propsCache.remove(meta.id);
+    m_titleKeys.remove(meta.id);
     if (!m_childIndexDirty) {
         // Keep the index: the new id goes where its sort key belongs.
         // (Rebuilding it per insert made importing 10k rows take minutes.)
@@ -1780,6 +1782,7 @@ void Workspace::convertToDatabase(const QString &id, const Schema &schema)
     if (it == m_pages.end() || it->kind != PageKind::Page)
         return;
     it->kind = PageKind::Database;
+    m_titleKeys.remove(id);
     exec(QStringLiteral("UPDATE pages SET kind=?, schema=? WHERE id=?"), {int(PageKind::Database), toJsonString(schema.toJson()), id});
     dropBlocks(id);
     markSearchDirty(id);
@@ -1799,6 +1802,7 @@ void Workspace::setTitle(const QString &id, const QString &title)
         return;
     it->title = title;
     it->updated = Ids::now();
+    m_titleKeys.remove(id);
     exec(QStringLiteral("UPDATE pages SET title=?, updated=? WHERE id=?"), {title, it->updated, id});
     const QString parent = it->parentId;
     const bool row = it->kind == PageKind::Row;
@@ -2004,6 +2008,7 @@ void Workspace::restore(const QString &id)
             if (it->kind == PageKind::Row) {
                 // A row without its database can't live on its own: make it a page.
                 it->kind = PageKind::Page;
+                m_titleKeys.remove(id); // "Untitled" becomes "New page"
                 exec(QStringLiteral("UPDATE pages SET kind=0 WHERE id=?"), {id});
             }
             it->parentId.clear();
@@ -2087,16 +2092,16 @@ QStringList Workspace::backlinks(const QString &id) const
     return out;
 }
 
-int Workspace::fuzzyScore(const QString &needle, const QString &haystack)
+namespace
 {
-    if (needle.isEmpty())
-        return 1;
-    const QString n = needle.toLower(), h = haystack.toLower();
+// Fuzzy matching on strings already in lower case.
+int fuzzyLowered(const QString &n, const QString &h)
+{
     if (h == n)
         return 1000;
     if (h.startsWith(n))
         return 800 - int(h.size());
-    const int idx = h.indexOf(n);
+    const int idx = int(h.indexOf(n));
     if (idx >= 0) {
         // Word starts score higher than matches inside a word.
         const bool wordStart = idx == 0 || !h[idx - 1].isLetterOrNumber();
@@ -2124,6 +2129,23 @@ int Workspace::fuzzyScore(const QString &needle, const QString &haystack)
     }
     return qMin(score, 300);
 }
+} // namespace
+
+int Workspace::fuzzyScore(const QString &needle, const QString &haystack)
+{
+    if (needle.isEmpty())
+        return 1;
+    return fuzzyLowered(needle.toLower(), haystack.toLower());
+}
+
+QString Workspace::titleKey(const QString &id) const
+{
+    // Lower-cased titles, kept: Quick Find matches every title per keystroke.
+    auto it = m_titleKeys.constFind(id);
+    if (it == m_titleKeys.constEnd())
+        it = m_titleKeys.insert(id, title(id).toLower());
+    return *it;
+}
 
 QList<Workspace::SearchHit> Workspace::search(const QString &query, const SearchOptions &options, int limit) const
 {
@@ -2132,6 +2154,7 @@ QList<Workspace::SearchHit> Workspace::search(const QString &query, const Search
     QSet<QString> seen;
     if (q.isEmpty())
         return hits;
+    const QString needle = q.toLower();
     const auto allowed = [&](const PageMeta &m) {
         if (m.isTrashed() || m.kind == PageKind::Template)
             return false;
@@ -2146,7 +2169,7 @@ QList<Workspace::SearchHit> Workspace::search(const QString &query, const Search
     for (const PageMeta &m : m_pages) {
         if (!allowed(m))
             continue;
-        const int s = fuzzyScore(q, m.title.isEmpty() ? title(m.id) : m.title);
+        const int s = fuzzyLowered(needle, titleKey(m.id));
         if (s > 0) {
             hits.append({m.id, QString(), s + 1000, true});
             seen.insert(m.id);
