@@ -13,6 +13,7 @@
 #include "TopBar.h"
 #include "core/Exporter.h"
 #include "core/Importer.h"
+#include "core/Maintenance.h"
 #include "core/Settings.h"
 #include "core/Workspace.h"
 #include "editor/BlockEditor.h"
@@ -26,6 +27,7 @@
 #include <QCloseEvent>
 #include <QDesktopServices>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QAbstractTextDocumentLayout>
@@ -40,6 +42,7 @@
 #include <QShortcut>
 #include <QScrollBar>
 #include <QStackedWidget>
+#include <QTimer>
 #include <QStandardPaths>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -429,6 +432,29 @@ void MainWindow::updateNavButtons()
     m_topBar->setNavigation(m_historyIndex > 0, m_historyIndex + 1 < m_history.size());
 }
 
+void MainWindow::startMaintenance()
+{
+    QTimer::singleShot(5000, this, [this] {
+        Workspace *ws = Workspace::instance();
+        if (!ws)
+            return;
+        ws->flushSearch(); // the copy gets an up-to-date search index
+        const QString dir = ws->directory();
+        const Settings &s = Settings::instance();
+        const QString backups = s.backupDir.isEmpty() ? Maintenance::defaultBackupDir(dir) : s.backupDir;
+        Maintenance::backup(dir, s.backupDir, false, s.keepBackups, this, [this, dir, backups](const Maintenance::BackupResult &r) {
+            if (!r.intact) {
+                toast(tr("The workspace file is damaged (%1). Your backups were left as they are.").arg(r.integrity.left(60)),
+                      tr("Open backups"), [backups] { QDesktopServices::openUrl(QUrl::fromLocalFile(backups)); });
+                return; // and no clean-up on a damaged file
+            }
+            if (!r.error.isEmpty())
+                toast(tr("Today's backup couldn't be made: %1").arg(r.error));
+            Maintenance::sweepMedia(dir, 30, this, {});
+        });
+    });
+}
+
 void MainWindow::restoreSession()
 {
     const QString last = Settings::instance().lastPage;
@@ -641,6 +667,17 @@ void MainWindow::importFiles(const QString &parentId, const QPoint &globalPos)
         if (paths.isEmpty())
             return;
         QApplication::setOverrideCursor(Qt::WaitCursor);
+        // A big export takes a while: say how far along it is and keep the
+        // window painting (input waits until it's done).
+        QElapsedTimer shown;
+        shown.start();
+        Importer::setProgress([this, &shown](int done, int total) {
+            if (shown.elapsed() < 80 && done < total)
+                return;
+            shown.restart();
+            toast(tr("Importing… %1 of %2").arg(done).arg(total));
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        });
         Importer::Result total;
         QString first;
         for (const QString &p : paths) {
@@ -656,6 +693,7 @@ void MainWindow::importFiles(const QString &parentId, const QPoint &globalPos)
             total.rows += r.rows;
             total.images += r.images;
         }
+        Importer::setProgress({});
         QApplication::restoreOverrideCursor();
         if (!first.isEmpty()) {
             navigate(first);

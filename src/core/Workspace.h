@@ -221,8 +221,12 @@ public:
     QString createRowFromTemplate(const QString &databaseId, const QString &templateId);
 
     // ---- maintenance ---------------------------------------------------------
-    // Copies the database to backups/ once a day, keeping the last `keep`.
+    // Copies the database to backups/ once a day, keeping the last `keep`
+    // (on the calling thread; Maintenance::backup() does it in the background).
     QString backup(bool force = false, int keep = 7);
+    // Indexes pages edited since the last search (it happens by itself a
+    // moment after editing stops, and before searches and backups).
+    void flushSearch() const;
     // Runs `fn` inside one transaction; signals are sent afterwards.
     void batch(const std::function<void()> &fn);
     // Removes what deleted pages left behind (versions, comments, search
@@ -262,7 +266,6 @@ private:
     void dropBlocks(const QString &id);
     void updateSyncedRefs(const QString &id, const QList<Block> &stored);
     void markSearchDirty(const QString &id);
-    void flushSearch() const;
     double sortAfter(const QString &parentId, const QString &afterId, bool rowsOnly) const;
     void touch(const QString &id);
     void updateLinks(const QString &id, const QList<Block> &blocks);

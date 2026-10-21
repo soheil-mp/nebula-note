@@ -24,6 +24,8 @@ void Settings::load()
     maximized = q.value(QStringLiteral("window/maximized"), false).toBool();
     lastPage = q.value(QStringLiteral("session/lastPage")).toString();
     expanded = q.value(QStringLiteral("session/expanded")).toStringList();
+    backupDir = q.value(QStringLiteral("data/backupDir")).toString();
+    keepBackups = qBound(1, q.value(QStringLiteral("data/keepBackups"), 7).toInt(), 365);
 }
 
 void Settings::save()
@@ -42,6 +44,8 @@ void Settings::save()
     q.setValue(QStringLiteral("window/maximized"), maximized);
     q.setValue(QStringLiteral("session/lastPage"), lastPage);
     q.setValue(QStringLiteral("session/expanded"), expanded);
+    q.setValue(QStringLiteral("data/backupDir"), backupDir);
+    q.setValue(QStringLiteral("data/keepBackups"), keepBackups);
 }
 
 void Settings::apply()

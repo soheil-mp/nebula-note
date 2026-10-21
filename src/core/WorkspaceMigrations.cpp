@@ -106,6 +106,7 @@ bool Workspace::migrateTo2()
                                      "PRIMARY KEY(sync_id, page_id)) WITHOUT ROWID"))
               && exec(QStringLiteral("CREATE INDEX IF NOT EXISTS synced_refs_page ON synced_refs(page_id)"))
               && exec(QStringLiteral("CREATE TABLE IF NOT EXISTS search_map(rowid INTEGER PRIMARY KEY, page_id TEXT NOT NULL UNIQUE)"))
+              && exec(QStringLiteral("CREATE TABLE IF NOT EXISTS search_dirty(page_id TEXT PRIMARY KEY) WITHOUT ROWID"))
               && exec(QStringLiteral("CREATE INDEX IF NOT EXISTS reminders_page ON reminders(page_id)"))
               && exec(QStringLiteral("CREATE INDEX IF NOT EXISTS versions_page_created ON versions(page_id, created)"));
     if (!ok)

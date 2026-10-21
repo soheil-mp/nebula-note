@@ -27,6 +27,9 @@ public:
     void navigate(const QString &pageId, bool push = true);
     void goHome(bool push = true);
     void restoreSession();
+    // Today's backup, the integrity check and setting aside unused media,
+    // on a worker thread a few seconds after start.
+    void startMaintenance();
     void handleArguments(const QStringList &arguments);
     void toast(const QString &message, const QString &action = {}, std::function<void()> onAction = {});
     // For screenshots and automation: quickfind, settings, templates, trash, slash, pagemenu.

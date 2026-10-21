@@ -1,5 +1,6 @@
 #include "Overlays.h"
 
+#include "core/Maintenance.h"
 #include "core/Settings.h"
 #include "core/Workspace.h"
 #include "editor/SpellChecker.h"
@@ -13,6 +14,7 @@
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFileDialog>
 #include <QFontMetricsF>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -782,10 +784,83 @@ QWidget *SettingsPanel::workspacePage()
     auto *backup = new FlatButton(QStringLiteral("shield"), tr("Back up now"));
     backup->setFilled(true);
     connect(backup, &FlatButton::clicked, this, [backup] {
-        const QString path = Workspace::instance()->backup(true);
-        backup->setText(path.isEmpty() ? QObject::tr("Backup failed") : QObject::tr("Saved ✓"));
+        Workspace *ws = Workspace::instance();
+        ws->flushSearch();
+        backup->setText(QObject::tr("Backing up…"));
+        backup->setEnabled(false);
+        const Settings &s = Settings::instance();
+        Maintenance::backup(ws->directory(), s.backupDir, true, s.keepBackups, backup, [backup](const Maintenance::BackupResult &r) {
+            backup->setEnabled(true);
+            backup->setText(!r.intact               ? QObject::tr("File damaged")
+                            : r.path.isEmpty() ? QObject::tr("Backup failed")
+                                               : QObject::tr("Saved ✓"));
+            if (!r.intact || !r.error.isEmpty())
+                backup->setToolTip(r.intact ? r.error : r.integrity);
+        });
     });
-    v->addWidget(settingRow(tr("Backups"), tr("A copy is made automatically once a day; the last seven are kept in backups/."), backup));
+    v->addWidget(settingRow(tr("Backups"),
+                            tr("A copy is made in the background once a day; the last %n are kept.", nullptr, Settings::instance().keepBackups),
+                            backup));
+    // Where backups go: elsewhere (another disk, a synced folder) survives a broken drive.
+    auto *where = new QWidget;
+    auto *whereRow = new QHBoxLayout(where);
+    whereRow->setContentsMargins(0, 0, 0, 0);
+    whereRow->setSpacing(6);
+    auto *change = new FlatButton(QStringLiteral("folder"), tr("Change…"));
+    change->setFilled(true);
+    auto *reset = new FlatButton(QString(), tr("Use default"));
+    whereRow->addWidget(reset);
+    whereRow->addWidget(change);
+    auto shownPath = [](QString dir) {
+        dir = QDir::toNativeSeparators(dir);
+        if (const QString home = QDir::homePath(); dir.startsWith(home + QDir::separator()))
+            dir = QStringLiteral("~") + dir.mid(home.size());
+        return dir;
+    };
+    const QString currentBackups = Settings::instance().backupDir.isEmpty() ? Maintenance::defaultBackupDir(ws->directory())
+                                                                            : Settings::instance().backupDir;
+    QWidget *whereRowWidget = settingRow(tr("Backup folder"), shownPath(currentBackups), where);
+    auto *whereDetail = whereRowWidget->findChildren<QLabel *>().value(1);
+    reset->setVisible(!Settings::instance().backupDir.isEmpty());
+    connect(change, &FlatButton::clicked, this, [this, whereDetail, reset, shownPath] {
+        const QString dir = QFileDialog::getExistingDirectory(window(), tr("Back up to"), Settings::instance().backupDir.isEmpty()
+                                                                                              ? QDir::homePath()
+                                                                                              : Settings::instance().backupDir);
+        if (dir.isEmpty())
+            return;
+        Settings::instance().backupDir = dir;
+        Settings::instance().save();
+        if (whereDetail)
+            whereDetail->setText(shownPath(dir));
+        reset->show();
+    });
+    connect(reset, &FlatButton::clicked, this, [whereDetail, reset, shownPath] {
+        Settings::instance().backupDir.clear();
+        Settings::instance().save();
+        if (whereDetail)
+            whereDetail->setText(shownPath(Maintenance::defaultBackupDir(Workspace::instance()->directory())));
+        reset->hide();
+    });
+    v->addWidget(whereRowWidget);
+    v->addWidget(separator());
+    // Images and files no page uses any more: set aside daily, deleted
+    // after 30 days, or now from here.
+    auto *sweep = new FlatButton(QStringLiteral("trash"), tr("Clean up now"));
+    sweep->setFilled(true);
+    connect(sweep, &FlatButton::clicked, this, [this, sweep] {
+        if (!confirmDialog(window(), tr("Delete unused files?"),
+                           tr("Images and files that no page, row, cover or saved version uses are deleted for good."), tr("Delete"), true))
+            return;
+        sweep->setEnabled(false);
+        sweep->setText(tr("Cleaning…"));
+        Maintenance::sweepMedia(Workspace::instance()->directory(), 0, sweep, [sweep](const Maintenance::MediaResult &r) {
+            sweep->setEnabled(true);
+            sweep->setText(!r.error.isEmpty() ? QObject::tr("Couldn't clean up")
+                           : r.purged == 0    ? QObject::tr("Nothing to remove")
+                                              : QObject::tr("Freed %1").arg(QLocale().formattedDataSize(r.freedBytes)));
+        });
+    });
+    v->addWidget(settingRow(tr("Unused files"), tr("Files no page uses are set aside each day and deleted after 30 days."), sweep));
     v->addWidget(separator());
     auto *imp = new FlatButton(QStringLiteral("download"), tr("Import…"));
     imp->setFilled(true);

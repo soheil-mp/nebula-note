@@ -25,6 +25,8 @@ public:
     bool showBacklinks = true;
     bool spellCheck = true;
     QStringList expanded; // sidebar pages left open
+    QString backupDir;    // empty: backups/ in the workspace folder
+    int keepBackups = 7;  // daily copies kept
 
     void load();
     void save();

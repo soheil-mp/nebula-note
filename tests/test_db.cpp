@@ -3,6 +3,7 @@
 // reminders, templates, search options).
 #include "core/Blocks.h"
 #include "core/Formula.h"
+#include "core/Maintenance.h"
 #include "core/Schema.h"
 #include "core/Workspace.h"
 
@@ -1096,6 +1097,119 @@ private slots:
         Workspace ws;
         QVERIFY(!ws.open(dir));
         QVERIFY(ws.lastError().contains(QStringLiteral("newer")));
+    }
+
+    // ---- maintenance (backups, integrity, unused media) ------------------------
+
+    void backupsRotateAndGoElsewhere()
+    {
+        m_ws->createPage({}, "Backed up", {Block::make(BlockType::Paragraph, "safe")});
+        const QString dir = m_ws->directory();
+        Maintenance::BackupResult r = Maintenance::backupNow(dir, {}, false, 3);
+        QVERIFY2(r.error.isEmpty(), qPrintable(r.error));
+        QVERIFY(r.intact);
+        QVERIFY(QFileInfo::exists(r.path));
+        QVERIFY(r.path.startsWith(Maintenance::defaultBackupDir(dir)));
+        // Once a day unless forced.
+        QVERIFY(Maintenance::backupNow(dir, {}, false, 3).path.isEmpty());
+        QVERIFY(!Maintenance::backupNow(dir, {}, true, 3).path.isEmpty());
+        // Older copies beyond `keep` go.
+        const QDir backups(Maintenance::defaultBackupDir(dir));
+        for (const char *old : {"workspace-2020-01-01.db", "workspace-2020-01-02.db", "workspace-2020-01-03.db"}) {
+            QFile f(backups.filePath(QLatin1String(old)));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+        }
+        Maintenance::backupNow(dir, {}, true, 3);
+        QCOMPARE(backups.entryList({"workspace-*.db"}).size(), 3);
+        QVERIFY(!QFileInfo::exists(backups.filePath("workspace-2020-01-01.db")));
+        // Another folder (another disk) works the same.
+        const QString elsewhere = m_dir.path() + "/elsewhere";
+        r = Maintenance::backupNow(dir, elsewhere, false, 3);
+        QVERIFY(r.path.startsWith(elsewhere));
+        // The copy opens and has the page.
+        Workspace copy;
+        const QString copyDir = m_dir.path() + "/restored";
+        QDir().mkpath(copyDir);
+        QVERIFY(QFile::copy(r.path, copyDir + "/workspace.db"));
+        QVERIFY(copy.open(copyDir));
+        QCOMPARE(copy.search("safe").size(), 1);
+    }
+
+    void damagedFilesKeepTheirBackups()
+    {
+        QList<Block> blocks;
+        for (int i = 0; i < 400; ++i)
+            blocks << Block::make(BlockType::Paragraph, QStringLiteral("filler text to spread over many pages %1").arg(i));
+        m_ws->createPage({}, "Big", blocks);
+        const QString dir = m_ws->directory();
+        QVERIFY(!Maintenance::backupNow(dir, {}, false, 7).path.isEmpty());
+        m_ws->close();
+        // Scribble over the middle of the file.
+        QFile f(dir + "/workspace.db");
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        QVERIFY(f.size() > 40000);
+        f.seek(f.size() / 2);
+        f.write(QByteArray(8192, '\x5a'));
+        f.close();
+        const Maintenance::BackupResult r = Maintenance::backupNow(dir, {}, true, 7);
+        QVERIFY(!r.intact || !r.error.isEmpty());
+        QVERIFY(r.path.isEmpty());
+        // Yesterday's (here: the first) copy is still there.
+        QCOMPARE(QDir(Maintenance::defaultBackupDir(dir)).entryList({"workspace-*.db"}).size(), 1);
+        QVERIFY(m_ws->open(m_dir.path() + "/after-damage")); // for cleanup()
+    }
+
+    void unusedMediaIsSetAsideThenDeleted()
+    {
+        const QString used = m_ws->importMediaData(QByteArray("used image"), "png");
+        const QString inVersion = m_ws->importMediaData(QByteArray("only in history"), "png");
+        const QString unused = m_ws->importMediaData(QByteArray("nobody's"), "png");
+        const QString fresh = m_ws->importMediaData(QByteArray("just pasted"), "png");
+        const QString foreign = QStringLiteral("notes.txt");
+        {
+            QFile f(m_ws->mediaPath(foreign));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+        }
+        Block img = Block::make(BlockType::Image);
+        img.media = used;
+        Block old = Block::make(BlockType::Image);
+        old.media = inVersion;
+        const QString p = m_ws->createPage({}, "Pictures", {img, old});
+        QVERIFY(m_ws->snapshot(p, true));
+        m_ws->setContent(p, {img}); // the second image now lives only in history
+        // Everything but the fresh file is two days old.
+        const QDateTime twoDays = QDateTime::currentDateTime().addDays(-2);
+        for (const QString &name : {used, inVersion, unused, foreign}) {
+            QFile f(m_ws->mediaPath(name));
+            QVERIFY(f.open(QIODevice::ReadWrite));
+            QVERIFY(f.setFileTime(twoDays, QFileDevice::FileModificationTime));
+        }
+        Maintenance::MediaResult r = Maintenance::sweepMediaNow(m_ws->directory(), 30);
+        QVERIFY2(r.error.isEmpty(), qPrintable(r.error));
+        QCOMPARE(r.moved, 1);
+        const QString trash = m_ws->directory() + "/media-trash/";
+        QVERIFY(QFileInfo::exists(trash + unused));
+        for (const QString &name : {used, inVersion, fresh, foreign})
+            QVERIFY2(QFileInfo::exists(m_ws->mediaDir() + "/" + name), qPrintable(name));
+        // Wanted again (a restored page): it comes back by itself.
+        QVERIFY(QFileInfo::exists(m_ws->mediaPath(unused)));
+        QVERIFY(!QFileInfo::exists(trash + unused));
+        // Swept again and left for over 30 days: deleted.
+        {
+            QFile f(m_ws->mediaPath(unused));
+            QVERIFY(f.open(QIODevice::ReadWrite));
+            QVERIFY(f.setFileTime(twoDays, QFileDevice::FileModificationTime));
+        }
+        Maintenance::sweepMediaNow(m_ws->directory(), 30);
+        {
+            QFile f(trash + unused);
+            QVERIFY(f.open(QIODevice::ReadWrite));
+            QVERIFY(f.setFileTime(QDateTime::currentDateTime().addDays(-40), QFileDevice::FileModificationTime));
+        }
+        r = Maintenance::sweepMediaNow(m_ws->directory(), 30);
+        QCOMPARE(r.purged, 1);
+        QVERIFY(r.freedBytes > 0);
+        QVERIFY(!QFileInfo::exists(trash + unused));
     }
 
     // ---- speed paths (they must keep the same results) ------------------------

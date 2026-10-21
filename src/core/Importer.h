@@ -33,6 +33,11 @@ Result importPath(Workspace &ws, const QString &path, const QString &parentId = 
 using Fetcher = std::function<QByteArray(const QString &url, QString *mimeType)>;
 void setFetcher(const Fetcher &fetcher);
 
+// Called as a big import goes (pages and rows created, then filled in), so
+// the UI can show how far along it is and keep painting.
+using Progress = std::function<void(int done, int total)>;
+void setProgress(const Progress &progress);
+
 // Strips Notion's " <32 hex>" id suffix from a file or folder name.
 QString stripNotionId(const QString &name);
 }

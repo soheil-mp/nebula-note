@@ -511,8 +511,15 @@ private slots:
         }
         Workspace ws;
         QVERIFY(ws.open(dir.filePath(QStringLiteral("ws"))));
+        // Progress goes from the first step to the last.
+        QList<QPair<int, int>> steps;
+        Importer::setProgress([&](int done, int total) { steps.append({done, total}); });
         const Importer::Result r = Importer::importPath(ws, zip);
+        Importer::setProgress({});
         QVERIFY2(r.ok(), qPrintable(r.error));
+        QVERIFY(!steps.isEmpty());
+        QCOMPARE(steps.first().first, 1);
+        QCOMPARE(steps.last().first, steps.last().second);
         QCOMPARE(ws.title(r.rootId), QStringLiteral("Doc"));
         QCOMPARE(r.pages, 2); // no extra "Doc" folder page
         QCOMPARE(r.images, 2);

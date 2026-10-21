@@ -31,11 +31,28 @@ Fetcher &fetcher()
     static Fetcher f;
     return f;
 }
+
+Progress &progress()
+{
+    static Progress p;
+    return p;
+}
+
+void report(int done, int total)
+{
+    if (progress())
+        progress()(done, total);
+}
 } // namespace
 
 void setFetcher(const Fetcher &f)
 {
     fetcher() = f;
+}
+
+void setProgress(const Progress &p)
+{
+    progress() = p;
 }
 
 QString Result::summary() const
@@ -426,8 +443,12 @@ Result importPath(Workspace &ws, const QString &path, const QString &parentId)
 
         // Titles of CSV rows waiting for their page: database key → [(title, row id)].
         QHash<QString, QList<QPair<QString, QString>>> pendingRows;
+        // Progress: every item is created, then filled in.
+        const int steps = int(ordered.size()) * 2;
+        int step = 0;
 
         for (Item *item : ordered) {
+            report(++step, steps);
             if (item->isRow)
                 continue;
             const QString parent = item->parentKey.isEmpty() ? rootParent : items[item->parentKey].id;
@@ -515,6 +536,7 @@ Result importPath(Workspace &ws, const QString &path, const QString &parentId)
 
         // ---- content -----------------------------------------------------------------
         for (Item *item : ordered) {
+            report(++step, steps);
             if (item->mdPath.isEmpty() || item->id.isEmpty())
                 continue;
             QString md = QString::fromUtf8(src.read(item->mdPath));

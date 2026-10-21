@@ -313,10 +313,8 @@ int main(int argc, char **argv)
         printf("%s\n", qPrintable(r.path));
         return 0;
     }
-    if (!shot) {
+    if (!shot)
         instance.listen();
-        ws.backup(false);
-    }
 
     MainWindow window;
     if (!shot && !Settings::instance().geometry.isEmpty())
@@ -328,6 +326,8 @@ int main(int argc, char **argv)
     else
         window.show();
     window.restoreSession();
+    if (!shot)
+        window.startMaintenance(); // backups and clean-up, in the background, a little later
     window.handleArguments(cli.positionalArguments().isEmpty() ? QStringList() : QStringList{QString()} + cli.positionalArguments());
 
     // Logging out or quitting saves what was typed in the last moment.

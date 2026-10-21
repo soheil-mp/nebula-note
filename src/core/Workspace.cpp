@@ -1,6 +1,7 @@
 #include "Workspace.h"
 
 #include "Ids.h"
+#include "Maintenance.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -124,6 +125,17 @@ bool Workspace::open(const QString &directory)
         return false;
     }
     m_tokenizer = metaValue(QStringLiteral("searchTokenizer"));
+    // Pages edited but not indexed yet are listed in the file itself, so a
+    // crash or a backup taken in between still catches up here.
+    exec(QStringLiteral("CREATE TABLE IF NOT EXISTS search_dirty(page_id TEXT PRIMARY KEY) WITHOUT ROWID"));
+    {
+        QSqlQuery dirty(m_db);
+        if (dirty.exec(QStringLiteral("SELECT page_id FROM search_dirty UNION SELECT id FROM pages WHERE id NOT IN (SELECT page_id FROM search_map)")))
+            while (dirty.next())
+                m_searchDirty.insert(dirty.value(0).toString());
+        if (!m_searchDirty.isEmpty())
+            m_searchTimer->start();
+    }
     // Fresh statistics for the query planner (fast; see sqlite.org/lang_analyze.html).
     exec(QStringLiteral("PRAGMA optimize=0x10002"));
     loadMeta();
@@ -2024,6 +2036,7 @@ void Workspace::deleteForever(const QString &id)
             exec(QStringLiteral("DELETE FROM reminders WHERE page_id=?"), {p});
             exec(QStringLiteral("DELETE FROM search WHERE rowid IN (SELECT rowid FROM search_map WHERE page_id=?)"), {p});
             exec(QStringLiteral("DELETE FROM search_map WHERE page_id=?"), {p});
+            exec(QStringLiteral("DELETE FROM search_dirty WHERE page_id=?"), {p});
             dropBlocks(p);
             // Synced content it started, unless another page still shows it.
             exec(QStringLiteral("DELETE FROM synced WHERE origin=? AND id NOT IN (SELECT sync_id FROM synced_refs)"), {p});
@@ -2279,14 +2292,26 @@ QString Workspace::importMedia(const QString &filePath)
 
 QString Workspace::mediaPath(const QString &fileName) const
 {
-    return QDir(mediaDir()).filePath(QFileInfo(fileName).fileName());
+    const QString name = QFileInfo(fileName).fileName();
+    const QString path = QDir(mediaDir()).filePath(name);
+    if (!name.isEmpty() && !QFileInfo::exists(path)) {
+        // Set aside as unused (Maintenance::sweepMedia) but wanted again,
+        // say by a restored version: bring it back.
+        const QString trashed = QDir(m_dir).filePath(QStringLiteral("media-trash/") + name);
+        if (QFileInfo::exists(trashed))
+            QFile::rename(trashed, path);
+    }
+    return path;
 }
 
 // ---- maintenance ---------------------------------------------------------------
 
 void Workspace::markSearchDirty(const QString &id)
 {
-    m_searchDirty.insert(id);
+    if (!m_searchDirty.contains(id)) {
+        m_searchDirty.insert(id);
+        exec(QStringLiteral("INSERT OR IGNORE INTO search_dirty(page_id) VALUES(?)"), {id});
+    }
     m_searchTimer->start();
 }
 
@@ -2298,13 +2323,16 @@ void Workspace::flushSearch() const
     const QSet<QString> ids = std::exchange(m_searchDirty, {});
     auto *self = const_cast<Workspace *>(this);
     const bool own = m_batchDepth == 0 && self->m_db.transaction();
-    QSqlQuery find(m_db), map(m_db), drop(m_db), add(m_db), unmap(m_db);
+    QSqlQuery find(m_db), map(m_db), drop(m_db), add(m_db), unmap(m_db), done(m_db);
+    done.prepare(QStringLiteral("DELETE FROM search_dirty WHERE page_id=?"));
     find.prepare(QStringLiteral("SELECT rowid FROM search_map WHERE page_id=?"));
     map.prepare(QStringLiteral("INSERT INTO search_map(page_id) VALUES(?)"));
     drop.prepare(QStringLiteral("DELETE FROM search WHERE rowid=?"));
     add.prepare(QStringLiteral("INSERT INTO search(rowid, body) VALUES(?, ?)"));
     unmap.prepare(QStringLiteral("DELETE FROM search_map WHERE page_id=?"));
     for (const QString &id : ids) {
+        done.addBindValue(id);
+        done.exec();
         qint64 rowid = -1;
         find.addBindValue(id);
         if (find.exec() && find.next())
@@ -2349,28 +2377,13 @@ void Workspace::cleanUp()
         exec(QStringLiteral("DELETE FROM synced_refs WHERE page_id") + gone);
         exec(QStringLiteral("DELETE FROM search WHERE rowid IN (SELECT rowid FROM search_map WHERE page_id") + gone + QLatin1Char(')'));
         exec(QStringLiteral("DELETE FROM search_map WHERE page_id") + gone);
+        exec(QStringLiteral("DELETE FROM search_dirty WHERE page_id") + gone);
         exec(QStringLiteral("DELETE FROM synced WHERE origin") + gone + QStringLiteral(" AND id NOT IN (SELECT sync_id FROM synced_refs)"));
     });
 }
 
 QString Workspace::backup(bool force, int keep)
 {
-    const QString dir = QDir(m_dir).filePath(QStringLiteral("backups"));
-    QDir().mkpath(dir);
-    const QString stamp = QDate::currentDate().toString(Qt::ISODate);
-    const QString target = QDir(dir).filePath(QStringLiteral("workspace-%1.db").arg(stamp));
-    if (QFileInfo::exists(target)) {
-        if (!force)
-            return target;
-        QFile::remove(target);
-    }
-    QString escaped = target;
-    escaped.replace(QLatin1Char('\''), QStringLiteral("''"));
-    if (!exec(QStringLiteral("VACUUM INTO '%1'").arg(escaped)))
-        return {};
-    QDir d(dir);
-    QStringList files = d.entryList({QStringLiteral("workspace-*.db")}, QDir::Files, QDir::Name);
-    while (files.size() > keep)
-        QFile::remove(d.filePath(files.takeFirst()));
-    return target;
+    flushSearch();
+    return Maintenance::backupNow(m_dir, {}, force, keep).path;
 }
