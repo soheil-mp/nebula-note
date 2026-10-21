@@ -309,39 +309,25 @@ PageView::PageView(QWidget *parent)
     m_backlinks->open = [this](const QString &id) { emit openPage(id); };
     m_backlinks->resized = [this] { relayout(); };
 
-    // Starter for empty pages.
+    // Starter for empty pages: one quiet line, as in Notion — start typing, or
+    // make the page a database.
     m_starter = new QWidget(m_canvas);
     m_starter->setObjectName(QStringLiteral("starter"));
-    auto *sv = new QVBoxLayout(m_starter);
-    sv->setContentsMargins(0, 4, 0, 4);
-    sv->setSpacing(1);
-    auto *hint = new QLabel(tr("Press Enter to start writing, or pick a starting point"));
-    hint->setFont(Theme::uiFont(13));
-    hint->setStyleSheet(QStringLiteral("color: #6b6b75; padding: 0 0 6px 2px;"));
-    sv->addWidget(hint);
-    auto addStarter = [&](const QString &icon, const QString &text, std::function<void()> fn) {
-        auto *b = new FlatButton(icon, text);
-        b->setTextSize(13.5);
-        b->setMinimumHeight(30);
-        connect(b, &FlatButton::clicked, this, fn);
-        sv->addWidget(b, 0, Qt::AlignLeft);
-    };
-    addStarter(QStringLiteral("page-empty"), tr("Empty page"), [this] { startWriting(); });
-    addStarter(QStringLiteral("template"), tr("Templates"), [this] { emit templatesRequested(m_pageId); });
-    addStarter(QStringLiteral("download"), tr("Import"), [this] { emit importRequested(m_pageId); });
-    auto *dbLabel = new QLabel(tr("Turn into a database"));
-    dbLabel->setFont(Theme::uiFont(12, QFont::Medium));
-    dbLabel->setStyleSheet(QStringLiteral("color: #6b6b75; padding: 12px 0 4px 2px;"));
-    sv->addWidget(dbLabel);
-    auto *dbRow = new QHBoxLayout;
-    dbRow->setSpacing(4);
-    for (const auto &[vt, icon] : {std::pair{ViewType::Table, QStringLiteral("table")}, std::pair{ViewType::Board, QStringLiteral("board")},
-                                   std::pair{ViewType::List, QStringLiteral("list")}, std::pair{ViewType::Gallery, QStringLiteral("gallery")},
-                                   std::pair{ViewType::Calendar, QStringLiteral("calendar")}, std::pair{ViewType::Timeline, viewTypeIcon(ViewType::Timeline)}}) {
-        auto *b = new FlatButton(icon, viewTypeName(vt));
-        b->setFilled(true);
+    auto *row = new QHBoxLayout(m_starter);
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(2);
+    auto *lead = new QLabel(tr("Get started with"));
+    lead->setFont(Theme::uiFont(13));
+    lead->setStyleSheet(QStringLiteral("color: #5e5e68; padding: 0 8px 0 2px;"));
+    row->addWidget(lead);
+    for (const ViewType vt : {ViewType::Table, ViewType::Board, ViewType::List, ViewType::Calendar, ViewType::Gallery}) {
+        auto *b = new FlatButton(viewTypeIcon(vt), viewTypeName(vt));
         b->setTextSize(13);
-        connect(b, &FlatButton::clicked, this, [this, vt = vt] {
+        b->setIconSize(15);
+        b->setMuted(true);
+        b->setMinimumHeight(28);
+        b->setToolTip(tr("Turn this page into a database with a %1 view").arg(viewTypeName(vt).toLower()));
+        connect(b, &FlatButton::clicked, this, [this, vt] {
             Workspace *ws = Workspace::instance();
             m_editor->flush();
             Schema s = Schema::basic();
@@ -365,10 +351,9 @@ PageView::PageView(QWidget *parent)
             ws->convertToDatabase(id, s);
             emit convertedToDatabase(id);
         });
-        dbRow->addWidget(b);
+        row->addWidget(b);
     }
-    dbRow->addStretch();
-    sv->addLayout(dbRow);
+    row->addStretch();
 
     // Find bar (stays at the top right while the page scrolls).
     m_findBar = new QWidget(this);
@@ -653,13 +638,14 @@ void PageView::relayout()
             y += m_discussion->height() + 10;
         }
     }
-    if (!m_starter->isHidden()) {
-        const int h = m_starter->sizeHint().height();
-        m_starter->setGeometry(x - 6, y + 6, colW, h);
-        y += h + 14;
-    }
     m_editor->setGeometry(x - gutter, y, colW + gutter + BlockEditor::rightMargin(), m_editor->height());
     y += m_editor->height();
+    // Under the (empty) first line, where you'd start typing.
+    if (!m_starter->isHidden()) {
+        const int h = m_starter->sizeHint().height();
+        m_starter->setGeometry(x - 6, y + 10, colW, h);
+        y += h + 10;
+    }
     if (!m_backlinks->isHidden()) {
         m_backlinks->setGeometry(x, y + 28, colW, m_backlinks->height());
         y += m_backlinks->height() + 28;

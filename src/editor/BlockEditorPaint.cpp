@@ -406,7 +406,7 @@ void BlockEditor::paintEvent(QPaintEvent *e)
                 break;
             case BlockType::Paragraph:
                 if (here)
-                    hint = tr("Type '/' for commands");
+                    hint = tr("Write something, or press '/' for commands…");
                 break;
             default:
                 break;

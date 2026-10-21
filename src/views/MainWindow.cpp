@@ -13,7 +13,6 @@
 #include "core/Exporter.h"
 #include "core/Importer.h"
 #include "core/Settings.h"
-#include "core/Templates.h"
 #include "core/Workspace.h"
 #include "editor/BlockEditor.h"
 #include "platform/WindowEffects.h"
@@ -114,8 +113,6 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_sidebar, &Sidebar::newPage, this, &MainWindow::newPage);
     connect(m_sidebar, &Sidebar::searchRequested, this, &MainWindow::openQuickFind);
     connect(m_sidebar, &Sidebar::homeRequested, this, [this] { goHome(); });
-    connect(m_sidebar, &Sidebar::templatesRequested, this, [this] { openTemplates(); });
-    connect(m_sidebar, &Sidebar::inboxRequested, this, &MainWindow::openInbox);
     connect(m_sidebar, &Sidebar::importRequested, this, [this](const QPoint &pos) { importFiles(QString(), pos); });
     connect(m_sidebar, &Sidebar::settingsRequested, this, &MainWindow::openSettings);
     connect(m_sidebar, &Sidebar::trashRequested, this, [this](const QPoint &pos) { openTrash(pos); });
@@ -163,7 +160,6 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_home, &HomeView::newPage, this, [this] { newPage(QString()); });
     connect(m_home, &HomeView::newDatabase, this, &MainWindow::newDatabase);
     connect(m_home, &HomeView::importRequested, this, [this] { importFiles(); });
-    connect(m_home, &HomeView::templatesRequested, this, [this] { openTemplates(); });
     connect(m_home, &HomeView::searchRequested, this, &MainWindow::openQuickFind);
 
     // ---- pages ----
@@ -174,8 +170,6 @@ MainWindow::MainWindow(QWidget *parent)
             m_page->revealBlock(block);
     });
     connect(m_page, &PageView::toast, this, [this](const QString &m) { toast(m); });
-    connect(m_page, &PageView::templatesRequested, this, [this](const QString &id) { openTemplates(id); });
-    connect(m_page, &PageView::importRequested, this, [this](const QString &id) { importFiles(id); });
     connect(m_page, &PageView::convertedToDatabase, this, [this](const QString &id) { navigate(id, false); });
     connect(m_page->editor(), &BlockEditor::toast, this, [this](const QString &m) { toast(m); });
     connect(m_database, &DatabaseView::openPage, this, [this](const QString &id) { navigate(id); });
@@ -248,7 +242,7 @@ void MainWindow::checkReminders()
         return;
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     for (const Workspace::Reminder &r : ws->reminders()) {
-        // Only ones that came due recently: old ones wait in the inbox.
+        // Only ones that came due recently (an old one isn't news).
         if (r.at > now || r.at < now - 6LL * 3600 * 1000 || m_notified.contains(r.id))
             continue;
         m_notified.insert(r.id);
@@ -265,18 +259,6 @@ void MainWindow::checkReminders()
             QProcess::startDetached(notifier, {QStringLiteral("--app-name=Nebula Note"), QStringLiteral("--icon=" NEBULA_APP_ID),
                                                QStringLiteral("Reminder"), text});
     }
-    m_sidebar->updateInboxCount();
-}
-
-void MainWindow::openInbox(const QPoint &globalPos)
-{
-    auto *inbox = new InboxPopover(this);
-    connect(inbox, &InboxPopover::openPage, this, [this](const QString &page, const QString &block) {
-        navigate(page);
-        if (!block.isEmpty() && currentPage() == page)
-            m_page->revealBlock(block);
-    });
-    inbox->popupAt(globalPos);
 }
 
 void MainWindow::openVersionHistory(const QString &pageId)
@@ -517,16 +499,10 @@ void MainWindow::runAction(const QString &action)
             openVersionHistory(currentPage());
         return;
     }
-    if (action == QLatin1String("inbox")) {
-        openInbox(mapToGlobal(QPoint(m_sidebar->width() + 8, 90)));
-        return;
-    }
     if (action == QLatin1String("quickfind"))
         openQuickFind();
     else if (action == QLatin1String("settings"))
         openSettings();
-    else if (action == QLatin1String("templates"))
-        openTemplates();
     else if (action == QLatin1String("trash"))
         openTrash(mapToGlobal(QPoint(m_sidebar->width() + 8, height() - 12)));
     else if (action == QLatin1String("select") && m_stack->currentWidget() == m_page) {
@@ -622,8 +598,6 @@ void MainWindow::openQuickFind()
             newPage(QString());
         else if (a == QLatin1String("home"))
             goHome();
-        else if (a == QLatin1String("templates"))
-            openTemplates();
         else if (a == QLatin1String("import"))
             importFiles();
         else if (a == QLatin1String("settings"))
@@ -642,24 +616,6 @@ void MainWindow::openSettings()
     connect(s, &SettingsPanel::importRequested, this, [this] { importFiles(); });
     connect(s, &SettingsPanel::exportAllRequested, this, &MainWindow::exportAll);
     s->open();
-}
-
-void MainWindow::openTemplates(const QString &targetPage)
-{
-    auto *g = new TemplateGallery(this);
-    connect(g, &TemplateGallery::picked, this, [this, targetPage](const QString &templateId) {
-        Workspace *ws = Workspace::instance();
-        flushAll();
-        QString page = targetPage;
-        const PageMeta *m = ws->page(page);
-        if (!m || m->isRow() || !ws->content(page).isEmpty() || m->isDatabase())
-            page = ws->createPage(QString());
-        Templates::apply(*ws, templateId, page);
-        navigate(page, page != targetPage);
-        if (page == targetPage && m_stack->currentWidget() == m_page)
-            m_page->editor()->reload();
-    });
-    g->open();
 }
 
 void MainWindow::openTrash(const QPoint &globalPos, bool growUp)

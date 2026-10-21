@@ -44,7 +44,7 @@ public:
     // Pointers stay valid until the next call that creates or deletes pages.
     const PageMeta *page(const QString &id) const;
     bool exists(const QString &id) const { return page(id) != nullptr; }
-    QString title(const QString &id) const; // "Untitled" for empty titles
+    QString title(const QString &id) const; // "New page" (or "Untitled" for rows and databases) when empty
     QList<const PageMeta *> children(const QString &parentId) const; // live pages and databases, sorted
     QList<const PageMeta *> rows(const QString &databaseId) const;   // live rows, sorted
     bool hasChildren(const QString &id) const;

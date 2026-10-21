@@ -159,7 +159,7 @@ private slots:
 
     void overlaysOpenAndClose()
     {
-        for (const QString &a : {QStringLiteral("quickfind"), QStringLiteral("settings"), QStringLiteral("templates")}) {
+        for (const QString &a : {QStringLiteral("quickfind"), QStringLiteral("settings")}) {
             m_win->runAction(a);
             settle(50);
             QWidget *focus = QApplication::focusWidget();
@@ -168,21 +168,6 @@ private slots:
             settle(50);
         }
         QVERIFY(true);
-    }
-
-    void templatesApplyEverywhere()
-    {
-        for (const Templates::Info &t : Templates::all()) {
-            const QString id = m_ws->createPage({});
-            Templates::apply(*m_ws, t.id, id);
-            m_win->navigate(id);
-            settle(10);
-            QVERIFY2(m_ws->page(id)->isDatabase() == t.database, qPrintable(t.id));
-            if (!t.database)
-                QVERIFY2(!m_ws->content(id).isEmpty(), qPrintable(t.id));
-            else
-                QVERIFY2(!m_ws->rows(id).isEmpty(), qPrintable(t.id));
-        }
     }
 
     void trashAndRestoreCurrentPage()
@@ -334,7 +319,7 @@ private slots:
         QVERIFY(qAbs(page->verticalScrollBar()->value() - before) <= 2);
     }
 
-    void inboxCollectsRemindersAndComments()
+    void remindersAnnounceThemselves()
     {
         const QString page = m_ws->createPage({}, QStringLiteral("Reminder page"));
         Block todo = Block::make(BlockType::Todo, QStringLiteral("Call mission control "));
@@ -347,33 +332,24 @@ private slots:
         m_ws->setContent(page, {todo});
         settle();
         QVERIFY(!m_ws->reminders().isEmpty());
-        auto *sidebar = find<Sidebar>();
-        sidebar->updateInboxCount();
-        QVERIFY(sidebar->inboxCount() >= 1);
-        m_ws->addComment(page, todo.id, QStringLiteral("Call"), QStringLiteral("Don't forget the time zone"));
-        m_win->openInbox(m_win->mapToGlobal(QPoint(300, 100)));
-        settle();
-        InboxPopover *inbox = nullptr;
-        for (QWidget *w : QApplication::topLevelWidgets())
-            if (auto *p = qobject_cast<InboxPopover *>(w); p && p->isVisible())
-                inbox = p;
-        QVERIFY(inbox);
-        QVERIFY(inbox->itemCount() >= 2);
-        // Opening an item goes to its page.
-        emit inbox->openPage(page, todo.id);
-        settle();
-        QCOMPARE(m_win->currentPage(), page);
-        inbox->close();
         // A reminder that just came due is announced once.
         m_win->checkReminders();
         settle();
         auto *toast = m_win->findChild<Toast *>(QStringLiteral("toast"));
         QVERIFY(toast && toast->message().contains(QStringLiteral("Call mission control")));
-        // Done reminders leave the badge.
         for (const Workspace::Reminder &r : m_ws->reminders())
             m_ws->setReminderDone(r.id, true);
-        sidebar->updateInboxCount();
-        QCOMPARE(sidebar->inboxCount(), 0);
+        QVERIFY(m_ws->reminders().isEmpty());
+    }
+
+    void sidebarHasNoTemplatesOrInbox()
+    {
+        // Search, Home and Import only: the template gallery and inbox are gone.
+        auto *sidebar = find<Sidebar>();
+        QStringList ids;
+        for (const auto &item : sidebar->m_top)
+            ids.append(item.id);
+        QCOMPARE(ids, (QStringList{QStringLiteral("search"), QStringLiteral("home"), QStringLiteral("import")}));
     }
 
     void quickFindFiltersAndSorts()

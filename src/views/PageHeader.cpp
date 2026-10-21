@@ -482,6 +482,7 @@ void PageHeader::refresh()
     m_icon = m->icon;
     m_cover = m->cover;
     m_coverWidget->setCover(m->cover, m->coverPos);
+    m_title->setPlaceholder(m->isRow() || m->isDatabase() ? tr("Untitled") : tr("New page"));
     if (!m_title->hasFocus() && !m_titleTimer.isActive())
         m_title->setTitle(m->title);
     m_addIcon->setVisible(m->icon.isEmpty() && m_editable);

@@ -15,7 +15,6 @@ signals:
     void newPage();
     void newDatabase();
     void importRequested();
-    void templatesRequested();
     void searchRequested();
 
 protected:

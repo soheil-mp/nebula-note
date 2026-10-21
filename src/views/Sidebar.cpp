@@ -11,9 +11,7 @@
 #include <QFontMetricsF>
 #include <QKeyEvent>
 #include <QLineEdit>
-#include <QDateTime>
 #include <QMouseEvent>
-#include <QTimer>
 #include <QPainter>
 #include <QPainterPath>
 #include <QScrollArea>
@@ -576,8 +574,6 @@ Sidebar::Sidebar(QWidget *parent)
 
     m_top = {{QStringLiteral("search"), QStringLiteral("search"), tr("Search"), QStringLiteral("Ctrl+P"), {}},
              {QStringLiteral("home"), QStringLiteral("home"), tr("Home"), QString(), {}},
-             {QStringLiteral("inbox"), QStringLiteral("inbox"), tr("Inbox"), QString(), {}},
-             {QStringLiteral("templates"), QStringLiteral("template"), tr("Templates"), QString(), {}},
              {QStringLiteral("import"), QStringLiteral("download"), tr("Import"), QString(), {}}};
     m_bottom = {{QStringLiteral("settings"), QStringLiteral("settings"), tr("Settings"), QStringLiteral("Ctrl+,"), {}},
                 {QStringLiteral("trash"), QStringLiteral("trash"), tr("Trash"), QString(), {}}};
@@ -587,29 +583,8 @@ Sidebar::Sidebar(QWidget *parent)
             if (id.isEmpty())
                 update(); // workspace renamed
         });
-        connect(ws, &Workspace::remindersChanged, this, &Sidebar::updateInboxCount);
     }
-    // Reminders come due as time passes.
-    auto *tick = new QTimer(this);
-    tick->setInterval(60000);
-    connect(tick, &QTimer::timeout, this, &Sidebar::updateInboxCount);
-    tick->start();
-    updateInboxCount();
     connect(&Settings::instance(), &Settings::changed, this, qOverload<>(&QWidget::update));
-}
-
-void Sidebar::updateInboxCount()
-{
-    int due = 0;
-    if (Workspace *ws = Workspace::instance()) {
-        const qint64 now = QDateTime::currentMSecsSinceEpoch();
-        for (const Workspace::Reminder &r : ws->reminders())
-            due += r.at <= now;
-    }
-    if (due != m_inboxCount) {
-        m_inboxCount = due;
-        update();
-    }
 }
 
 void Sidebar::setCurrentPage(const QString &id)
@@ -745,18 +720,7 @@ void Sidebar::paintEvent(QPaintEvent *)
         p.setFont(Theme::uiFont(13.5, active ? QFont::Medium : QFont::Normal));
         p.setPen(active || hover ? c.starlight : c.moon);
         p.drawText(QRectF(it.rect.left() + 36, it.rect.top(), it.rect.width() - 40, it.rect.height()), Qt::AlignVCenter, it.text);
-        if (it.id == QLatin1String("inbox") && m_inboxCount > 0) {
-            // Reminders that are due: a small count badge.
-            const QString n = QString::number(m_inboxCount);
-            p.setFont(Theme::uiFont(11, QFont::DemiBold));
-            const double w = qMax(18.0, QFontMetricsF(p.font()).horizontalAdvance(n) + 10);
-            const QRectF badge(it.rect.right() - w - 8, it.rect.center().y() - 9, w, 18);
-            p.setPen(Qt::NoPen);
-            p.setBrush(c.starlight);
-            p.drawRoundedRect(badge, 9, 9);
-            p.setPen(c.basalt);
-            p.drawText(badge, Qt::AlignCenter, n);
-        } else if (!it.hint.isEmpty() && hover) {
+        if (!it.hint.isEmpty() && hover) {
             p.setFont(Theme::uiFont(11.5));
             p.setPen(c.dust);
             p.drawText(QRectF(it.rect.left(), it.rect.top(), it.rect.width() - 10, it.rect.height()), Qt::AlignVCenter | Qt::AlignRight,
@@ -823,10 +787,6 @@ void Sidebar::mousePressEvent(QMouseEvent *e)
             emit searchRequested();
         else if (id == QLatin1String("home"))
             emit homeRequested();
-        else if (id == QLatin1String("templates"))
-            emit templatesRequested();
-        else if (id == QLatin1String("inbox"))
-            emit inboxRequested(mapToGlobal(m_top[h].rect.topRight() + QPoint(8, 0)));
         else if (id == QLatin1String("import"))
             emit importRequested(mapToGlobal(m_top[h].rect.topRight() + QPoint(8, 0)));
     } else if (h >= 100) {

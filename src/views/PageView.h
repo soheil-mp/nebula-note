@@ -33,8 +33,6 @@ public:
 signals:
     void openPage(const QString &pageId);
     void openBlock(const QString &pageId, const QString &blockId);
-    void templatesRequested(const QString &pageId);
-    void importRequested(const QString &pageId);
     void toast(const QString &message);
     void convertedToDatabase(const QString &pageId);
 

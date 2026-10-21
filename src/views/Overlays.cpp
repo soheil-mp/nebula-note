@@ -1,7 +1,6 @@
 #include "Overlays.h"
 
 #include "core/Settings.h"
-#include "core/Templates.h"
 #include "core/Workspace.h"
 #include "editor/SpellChecker.h"
 #include "platform/WindowEffects.h"
@@ -546,7 +545,6 @@ void QuickFind::refresh()
     static const A actions[] = {
         {"new", "page-empty", QT_TRANSLATE_NOOP("QuickFind", "New page"), "Ctrl+N", "create add blank"},
         {"home", "home", QT_TRANSLATE_NOOP("QuickFind", "Go home"), "", "dashboard start"},
-        {"templates", "template", QT_TRANSLATE_NOOP("QuickFind", "Templates"), "", "gallery starter"},
         {"import", "download", QT_TRANSLATE_NOOP("QuickFind", "Import Notion, Markdown or CSV"), "", "notion zip markdown csv"},
         {"settings", "settings", QT_TRANSLATE_NOOP("QuickFind", "Settings"), "Ctrl+,", "preferences options appearance"},
         {"sidebar", "sidebar", QT_TRANSLATE_NOOP("QuickFind", "Toggle sidebar"), "Ctrl+\\", "hide show"},
@@ -888,125 +886,6 @@ QWidget *SettingsPanel::aboutPage()
     v->addWidget(body);
     v->addStretch();
     return page;
-}
-
-// ---- TemplateGallery ----------------------------------------------------------------
-
-namespace
-{
-class TemplateGrid : public QWidget
-{
-public:
-    std::function<void(const QString &)> picked;
-    explicit TemplateGrid(QWidget *parent)
-        : QWidget(parent)
-    {
-        setMouseTracking(true);
-        m_items = Templates::all();
-    }
-    void relayout()
-    {
-        m_rects.clear();
-        const int cols = 2;
-        const double gap = 12, w = (width() - gap) / cols, h = 80;
-        for (int i = 0; i < m_items.size(); ++i)
-            m_rects.append(QRectF((i % cols) * (w + gap), (i / cols) * (h + gap), w, h));
-        setFixedHeight(int(((m_items.size() + 1) / 2) * (h + gap)));
-    }
-
-protected:
-    void resizeEvent(QResizeEvent *) override { relayout(); }
-    void paintEvent(QPaintEvent *) override
-    {
-        const auto &c = Theme::colors();
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
-        for (int i = 0; i < m_items.size(); ++i) {
-            const QRectF r = m_rects.value(i);
-            const bool hover = i == m_hover;
-            Theme::paintCard(p, r, 12, hover ? QColor(0x23, 0x23, 0x29) : QColor(0x1B, 0x1B, 0x20));
-            const QRectF tile(r.left() + 14, r.center().y() - 22, 44, 44);
-            QRadialGradient g(tile.center() - QPointF(10, 12), 50);
-            g.setColorAt(0, QColor(0x33, 0x33, 0x3B));
-            g.setColorAt(1, QColor(0x1A, 0x1A, 0x1F));
-            p.setPen(QPen(Theme::withAlpha(QColor(255, 255, 255), 0.08), 1));
-            p.setBrush(g);
-            p.drawRoundedRect(tile, 11, 11);
-            Icons::paint(p, tile.adjusted(12, 12, -12, -12), m_items[i].icon, c.starlight);
-            // Name over a description of up to two lines, centred as a block.
-            const QFont descFont = Theme::uiFont(12.5);
-            const double textW = r.right() - 16 - (tile.right() + 14);
-            const QStringList desc = Theme::wrapLines(descFont, m_items[i].description, textW);
-            const double lh = 17;
-            const double top = r.center().y() - (22 + 2 + desc.size() * lh) / 2;
-            p.setFont(Theme::uiFont(14, QFont::DemiBold));
-            p.setPen(c.starlight);
-            p.drawText(QRectF(tile.right() + 14, top, textW, 22), Qt::AlignVCenter, m_items[i].name);
-            if (m_items[i].database) {
-                const double tw = QFontMetricsF(p.font()).horizontalAdvance(m_items[i].name);
-                Theme::paintPill(p, QPointF(tile.right() + 22 + tw, top + 1), tr("Database"), 1, 20);
-            }
-            p.setFont(descFont);
-            p.setPen(c.haze);
-            for (int k = 0; k < desc.size(); ++k)
-                p.drawText(QRectF(tile.right() + 14, top + 24 + k * lh, textW, lh), Qt::AlignVCenter, desc[k]);
-        }
-    }
-    void mouseMoveEvent(QMouseEvent *e) override
-    {
-        int h = -1;
-        for (int i = 0; i < m_rects.size(); ++i)
-            if (m_rects[i].contains(e->position()))
-                h = i;
-        if (h != m_hover) {
-            m_hover = h;
-            setCursor(h >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
-            update();
-        }
-    }
-    void mousePressEvent(QMouseEvent *) override
-    {
-        if (m_hover >= 0 && picked)
-            picked(m_items[m_hover].id);
-    }
-
-private:
-    QList<Templates::Info> m_items;
-    QList<QRectF> m_rects;
-    int m_hover = -1;
-};
-}
-
-TemplateGallery::TemplateGallery(QWidget *host)
-    : ModalOverlay(host, QSize(820, 586))
-{
-    auto *v = new QVBoxLayout(card());
-    v->setContentsMargins(28, 24, 28, 24);
-    v->setSpacing(6);
-    auto *title = new QLabel(tr("Templates"));
-    title->setFont(Theme::displayFont(22, QFont::DemiBold));
-    title->setStyleSheet(QStringLiteral("color: #f1f1f5;"));
-    v->addWidget(title);
-    auto *sub = new QLabel(tr("Start from a shape that works. Everything is editable afterwards."));
-    sub->setFont(Theme::uiFont(13.5));
-    sub->setStyleSheet(QStringLiteral("color: #8a8a94; padding-bottom: 12px;"));
-    v->addWidget(sub);
-    auto *scroll = new QScrollArea;
-    scroll->setWidgetResizable(true);
-    scroll->setFrameStyle(QFrame::NoFrame);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->viewport()->setAutoFillBackground(false);
-    auto *grid = new TemplateGrid(scroll);
-    grid->picked = [this](const QString &id) {
-        emit picked(id);
-        dismiss();
-    };
-    scroll->setWidget(grid);
-    grid->setAutoFillBackground(false);
-    v->addWidget(scroll);
-    auto *close = new FlatButton(QStringLiteral("close"), QString(), card());
-    close->setGeometry(820 - 48, 14, 32, 32);
-    connect(close, &FlatButton::clicked, this, &ModalOverlay::dismiss);
 }
 
 // ---- TrashPopover -------------------------------------------------------------------

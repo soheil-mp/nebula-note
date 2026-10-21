@@ -272,7 +272,10 @@ QString Workspace::title(const QString &id) const
     const PageMeta *m = page(id);
     if (!m)
         return tr("Missing page");
-    return m->title.trimmed().isEmpty() ? tr("Untitled") : m->title;
+    if (!m->title.trimmed().isEmpty())
+        return m->title;
+    // Like Notion: an untitled page is a "New page"; rows and databases stay "Untitled".
+    return m->isRow() || m->isDatabase() ? tr("Untitled") : tr("New page");
 }
 
 QList<const PageMeta *> Workspace::children(const QString &parentId) const
@@ -1827,7 +1830,7 @@ QList<Workspace::SearchHit> Workspace::search(const QString &query, const Search
     for (const PageMeta &m : m_pages) {
         if (!allowed(m))
             continue;
-        const int s = fuzzyScore(q, m.title.isEmpty() ? tr("Untitled") : m.title);
+        const int s = fuzzyScore(q, m.title.isEmpty() ? title(m.id) : m.title);
         if (s > 0) {
             hits.append({m.id, QString(), s + 1000, true});
             seen.insert(m.id);

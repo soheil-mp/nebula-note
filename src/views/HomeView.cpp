@@ -28,7 +28,7 @@ public:
 
     struct Target {
         QRectF rect;
-        QString action; // "page:<id>", "new", "db", "import", "templates", "search"
+        QString action; // "page:<id>", "new", "db", "import", "search"
     };
 
     void refresh()
@@ -99,9 +99,9 @@ public:
         // Quick start.
         m_quickTop = y;
         y += 36;
-        const QStringList actions = {QStringLiteral("new"), QStringLiteral("db"), QStringLiteral("templates"), QStringLiteral("import")};
-        // Four across, or two by two when they'd get cramped.
-        const int cols = colW >= 4 * 200 + 3 * gap ? 4 : 2;
+        const QStringList actions = {QStringLiteral("new"), QStringLiteral("db"), QStringLiteral("import")};
+        // Side by side, or stacked when they'd get cramped.
+        const int cols = colW >= 3 * 200 + 2 * gap ? 3 : 1;
         const double tileW = (colW - (cols - 1) * gap) / cols;
         for (int i = 0; i < actions.size(); ++i)
             m_targets.append({QRectF(x0 + (i % cols) * (tileW + gap), y + (i / cols) * (76 + gap), tileW, 76), actions[i]});
@@ -299,10 +299,6 @@ protected:
                     icon = QStringLiteral("table");
                     title = tr("New database");
                     sub = tr("Table, board, gallery…");
-                } else if (t.action == QLatin1String("templates")) {
-                    icon = QStringLiteral("template");
-                    title = tr("From a template");
-                    sub = tr("Journals, plans, trackers");
                 } else {
                     icon = QStringLiteral("download");
                     title = tr("Import");
@@ -384,8 +380,6 @@ HomeView::HomeView(QWidget *parent)
             emit newDatabase();
         else if (action == QLatin1String("import"))
             emit importRequested();
-        else if (action == QLatin1String("templates"))
-            emit templatesRequested();
         else if (action == QLatin1String("search"))
             emit searchRequested();
     });

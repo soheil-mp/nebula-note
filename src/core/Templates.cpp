@@ -20,11 +20,6 @@ QString tr(const char *s)
     return QCoreApplication::translate("Templates", s);
 }
 
-QString longDate(const QDate &d)
-{
-    return QLocale(QLocale::English).toString(d, QStringLiteral("dddd, MMMM d, yyyy"));
-}
-
 // Markdown → blocks, with callout icons set from "glyph:" markers.
 QList<Block> md(const QString &text, const QStringList &calloutIcons = {})
 {
@@ -169,127 +164,6 @@ QString isoIn(int days)
 {
     return QDate::currentDate().addDays(days).toString(Qt::ISODate);
 }
-}
-
-QList<Info> all()
-{
-    return {
-        {QStringLiteral("meeting"), tr("Meeting notes"), tr("Agenda, notes, decisions and action items."), QStringLiteral("chat"), false},
-        {QStringLiteral("journal"), tr("Daily journal"), tr("Gratitude, focus and a short reflection."), QStringLiteral("moon"), false},
-        {QStringLiteral("project"), tr("Project brief"), tr("Goals, scope, milestones and risks on one page."), QStringLiteral("rocket"), false},
-        {QStringLiteral("weekly"), tr("Weekly plan"), tr("Seven days, each with its own to-dos."), QStringLiteral("calendar"), false},
-        {QStringLiteral("book"), tr("Book notes"), tr("Summary, key ideas and favorite quotes."), QStringLiteral("book"), false},
-        {QStringLiteral("wiki"), tr("Personal wiki"), tr("A home page with sections for everything you know."), QStringLiteral("globe"), false},
-        {QStringLiteral("tasks"), tr("Task board"), tr("Kanban board with status, priority and due dates."), QStringLiteral("board"), true},
-        {QStringLiteral("reading"), tr("Reading list"), tr("A shelf of books with ratings and genres."), QStringLiteral("gallery"), true},
-        {QStringLiteral("content"), tr("Content calendar"), tr("Plan what to publish and where."), QStringLiteral("calendar"), true},
-        {QStringLiteral("habits"), tr("Habit tracker"), tr("Tick off habits day by day."), QStringLiteral("check-circle"), true},
-    };
-}
-
-void apply(Workspace &ws, const QString &templateId, const QString &pageId)
-{
-    const QDate today = QDate::currentDate();
-    auto setPage = [&](const QString &title, const QString &icon, const QList<Block> &blocks) {
-        if (ws.page(pageId) && ws.page(pageId)->title.trimmed().isEmpty())
-            ws.setTitle(pageId, title);
-        if (ws.page(pageId) && ws.page(pageId)->icon.isEmpty())
-            ws.setIcon(pageId, QStringLiteral("glyph:") + icon);
-        ws.setContent(pageId, blocks);
-    };
-    ws.batch([&] {
-        if (templateId == QLatin1String("meeting")) {
-            setPage(tr("Meeting notes"), QStringLiteral("chat"),
-                    md(QStringLiteral("<aside>\n%1 · %2\n</aside>\n\n## %3\n\n1. \n\n## %4\n\n- \n\n## %5\n\n- [ ] \n\n## %6\n\n> ")
-                           .arg(longDate(today), tr("Attendees: "), tr("Agenda"), tr("Notes"), tr("Action items"), tr("Decisions")),
-                       {QStringLiteral("people")}));
-        } else if (templateId == QLatin1String("journal")) {
-            setPage(longDate(today), QStringLiteral("moon"),
-                    md(QStringLiteral("### %1\n\n- \n- \n- \n\n### %2\n\n- [ ] \n- [ ] \n\n### %3\n\n<details>\n<summary>%4</summary>\n\n- \n\n</details>\n\n"
-                                      "> %5")
-                           .arg(tr("Three things I'm grateful for"), tr("Focus for today"), tr("Reflection"), tr("What went well, what to change"),
-                                tr("We are made of star-stuff. — Carl Sagan"))));
-        } else if (templateId == QLatin1String("project")) {
-            setPage(tr("Project brief"), QStringLiteral("rocket"),
-                    md(QStringLiteral("<aside>\n%1\n</aside>\n\n## %2\n\n- \n\n## %3\n\n- \n\n## %4\n\n- [ ] %5\n- [ ] %6\n- [ ] %7\n\n"
-                                      "## %8\n\n<details>\n<summary>%9</summary>\n\n- \n\n</details>\n\n## %10\n\n- ")
-                           .arg(tr("One paragraph: what we're building, for whom, and why now."), tr("Goals"), tr("Non-goals"), tr("Milestones"),
-                                tr("Kick-off"), tr("First prototype"), tr("Launch"), tr("Risks"), tr("Known unknowns"), tr("Links")),
-                       {QStringLiteral("target")}));
-        } else if (templateId == QLatin1String("weekly")) {
-            QString text = QStringLiteral("<aside>\n%1\n</aside>\n\n").arg(tr("Week of %1").arg(QLocale(QLocale::English).toString(today, QStringLiteral("MMMM d"))));
-            const QDate monday = today.addDays(1 - today.dayOfWeek());
-            for (int i = 0; i < 7; ++i)
-                text += QStringLiteral("### %1\n\n- [ ] \n\n").arg(QLocale(QLocale::English).toString(monday.addDays(i), QStringLiteral("dddd")));
-            setPage(tr("Weekly plan"), QStringLiteral("calendar"), md(text, {QStringLiteral("calendar")}));
-        } else if (templateId == QLatin1String("book")) {
-            setPage(tr("Book notes"), QStringLiteral("book"),
-                    md(QStringLiteral("<aside>\n%1\n</aside>\n\n## %2\n\n\n## %3\n\n1. \n2. \n3. \n\n## %4\n\n> \n\n## %5\n\n")
-                           .arg(tr("Author · Year · Where I heard about it"), tr("Summary in three sentences"), tr("Key ideas"), tr("Quotes"),
-                                tr("My take")),
-                       {QStringLiteral("book")}));
-        } else if (templateId == QLatin1String("wiki")) {
-            const QString a = ws.createPage(pageId, tr("How I work"));
-            ws.setIcon(a, QStringLiteral("glyph:compass"));
-            const QString b = ws.createPage(pageId, tr("Tools & setup"));
-            ws.setIcon(b, QStringLiteral("glyph:terminal"));
-            const QString c = ws.createPage(pageId, tr("Recipes"));
-            ws.setIcon(c, QStringLiteral("glyph:coffee"));
-            QList<Block> blocks = md(QStringLiteral("<aside>\n%1\n</aside>\n\n## %2\n").arg(tr("Everything I know, in one place."), tr("Sections")),
-                                     {QStringLiteral("globe")});
-            blocks += {pageLink(a), pageLink(b), pageLink(c)};
-            setPage(tr("Personal wiki"), QStringLiteral("globe"), blocks);
-        } else if (templateId == QLatin1String("tasks")) {
-            if (ws.page(pageId)->title.isEmpty())
-                ws.setTitle(pageId, tr("Tasks"));
-            ws.setIcon(pageId, QStringLiteral("glyph:board"));
-            ws.convertToDatabase(pageId, taskSchema());
-            ws.createRow(pageId, tr("Plan the week"), {{QStringLiteral("status"), QStringLiteral("doing")}, {QStringLiteral("priority"), QStringLiteral("high")}, {QStringLiteral("due"), isoIn(1)}});
-            ws.createRow(pageId, tr("Reply to emails"), {{QStringLiteral("status"), QStringLiteral("todo")}, {QStringLiteral("priority"), QStringLiteral("med")}});
-            ws.createRow(pageId, tr("Water the plants"), {{QStringLiteral("status"), QStringLiteral("done")}, {QStringLiteral("priority"), QStringLiteral("low")}});
-        } else if (templateId == QLatin1String("reading")) {
-            if (ws.page(pageId)->title.isEmpty())
-                ws.setTitle(pageId, tr("Reading list"));
-            ws.setIcon(pageId, QStringLiteral("glyph:book"));
-            ws.convertToDatabase(pageId, readingSchema());
-            const QString r = ws.createRow(pageId, tr("Cosmos"), {{QStringLiteral("author"), QStringLiteral("Carl Sagan")}, {QStringLiteral("status"), QStringLiteral("todo")}});
-            ws.setCover(r, QStringLiteral("cosmos:galaxy:7"));
-        } else if (templateId == QLatin1String("content")) {
-            if (ws.page(pageId)->title.isEmpty())
-                ws.setTitle(pageId, tr("Content calendar"));
-            ws.setIcon(pageId, QStringLiteral("glyph:calendar"));
-            Schema s;
-            s.props = {prop(QStringLiteral("title"), tr("Title"), PropType::Title), statusProp(tr("Idea"), tr("Drafting"), tr("Published")),
-                       prop(QStringLiteral("publish"), tr("Publish date"), PropType::Date),
-                       prop(QStringLiteral("channel"), tr("Channel"), PropType::Select,
-                            {opt(QStringLiteral("blog"), tr("Blog"), 6), opt(QStringLiteral("news"), tr("Newsletter"), 3), opt(QStringLiteral("video"), tr("Video"), 8)})};
-            View cal = Schema::makeView(s, ViewType::Calendar);
-            cal.dateProp = QStringLiteral("publish");
-            View board = Schema::makeView(s, ViewType::Board);
-            board.groupBy = QStringLiteral("status");
-            s.views = {cal, board, Schema::makeView(s, ViewType::Table)};
-            ws.convertToDatabase(pageId, s);
-            ws.createRow(pageId, tr("Launch announcement"), {{QStringLiteral("status"), QStringLiteral("doing")}, {QStringLiteral("publish"), isoIn(3)}, {QStringLiteral("channel"), QStringLiteral("blog")}});
-        } else if (templateId == QLatin1String("habits")) {
-            if (ws.page(pageId)->title.isEmpty())
-                ws.setTitle(pageId, tr("Habit tracker"));
-            ws.setIcon(pageId, QStringLiteral("glyph:check-circle"));
-            Schema s;
-            s.props = {prop(QStringLiteral("title"), tr("Day"), PropType::Title), prop(QStringLiteral("date"), tr("Date"), PropType::Date),
-                       prop(QStringLiteral("read"), tr("Read"), PropType::Checkbox), prop(QStringLiteral("move"), tr("Move"), PropType::Checkbox),
-                       prop(QStringLiteral("meditate"), tr("Meditate"), PropType::Checkbox), prop(QStringLiteral("water"), tr("Water"), PropType::Number)};
-            View table = Schema::makeView(s, ViewType::Table);
-            table.sorts = {{QStringLiteral("date"), true}};
-            s.views = {table};
-            ws.convertToDatabase(pageId, s);
-            for (int i = 0; i < 5; ++i) {
-                const QDate d = today.addDays(-i);
-                ws.createRow(pageId, QLocale(QLocale::English).toString(d, QStringLiteral("ddd, MMM d")),
-                             {{QStringLiteral("date"), d.toString(Qt::ISODate)}, {QStringLiteral("read"), i % 2 == 0}, {QStringLiteral("move"), i != 2},
-                              {QStringLiteral("meditate"), i < 3}, {QStringLiteral("water"), 6 + (i % 3)}});
-            }
-        }
-    });
 }
 
 QString createSampleWorkspace(Workspace &ws)

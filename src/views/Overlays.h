@@ -89,17 +89,6 @@ private:
     QStackedWidget *m_stack;
 };
 
-// Template gallery.
-class TemplateGallery : public ModalOverlay
-{
-    Q_OBJECT
-public:
-    explicit TemplateGallery(QWidget *host);
-
-signals:
-    void picked(const QString &templateId);
-};
-
 // The trash: restore or delete pages for good.
 class TrashPopover : public Popover
 {

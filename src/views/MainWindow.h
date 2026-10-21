@@ -47,7 +47,6 @@ public slots:
     int currentTab() const { return m_currentTab; }
     TabStrip *tabStrip() const { return m_tabStrip; }
     MainWindow *newWindow(const QString &pageId = {});
-    void openInbox(const QPoint &globalPos);
     void checkReminders();
 
 protected:
@@ -68,7 +67,6 @@ private:
     void newDatabase();
     void openQuickFind();
     void openSettings();
-    void openTemplates(const QString &targetPage = {});
     // The card's bottom-left lands at `globalPos` (or its top-left).
     void openTrash(const QPoint &globalPos, bool growUp = true);
     // Asks what to import, with the menu at `globalPos` (or the cursor).

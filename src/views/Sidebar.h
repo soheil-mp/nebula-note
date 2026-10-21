@@ -2,7 +2,6 @@
 
 #include <QPointer>
 #include <QRegion>
-#include <QTimer>
 #include <QWidget>
 
 class QLineEdit;
@@ -82,11 +81,10 @@ class Sidebar : public QWidget
     Q_OBJECT
 public:
     explicit Sidebar(QWidget *parent = nullptr);
+    friend class AppTests;
     PageTree *tree() const { return m_tree; }
     void setCurrentPage(const QString &id);
     void setHomeActive(bool active);
-    int inboxCount() const { return m_inboxCount; }
-    void updateInboxCount();
 
 signals:
     void openPage(const QString &id);
@@ -94,8 +92,6 @@ signals:
     void newPage(const QString &parentId);
     void searchRequested();
     void homeRequested();
-    void templatesRequested();
-    void inboxRequested(const QPoint &globalPos);
     void importRequested(const QPoint &globalPos);
     void settingsRequested();
     void trashRequested(const QPoint &globalPos);
@@ -130,7 +126,6 @@ private:
     int m_hover = -1; // index into top (0…) or bottom (100…), 200 header, 201 collapse, 202 new
     bool m_homeActive = false;
     bool m_resizing = false;
-    int m_inboxCount = 0;
     PageTree *m_tree;
     QScrollArea *m_scroll;
 };
