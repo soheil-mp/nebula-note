@@ -345,117 +345,124 @@ QList<Span> spansFromJson(const QJsonArray &array)
     return out;
 }
 
+QJsonObject blockToJson(const Block &b)
+{
+    QJsonObject o;
+    o[QStringLiteral("t")] = blockTypeKey(b.type);
+    if (!b.id.isEmpty())
+        o[QStringLiteral("id")] = b.id;
+    if (b.depth)
+        o[QStringLiteral("d")] = b.depth;
+    if (b.checked)
+        o[QStringLiteral("checked")] = true;
+    if (b.collapsed)
+        o[QStringLiteral("collapsed")] = true;
+    if (b.toggleable)
+        o[QStringLiteral("tg")] = true;
+    if (!b.language.isEmpty())
+        o[QStringLiteral("lang")] = b.language;
+    if (!b.icon.isEmpty())
+        o[QStringLiteral("icon")] = b.icon;
+    if (b.color)
+        o[QStringLiteral("fg")] = b.color;
+    if (b.background)
+        o[QStringLiteral("bg")] = b.background;
+    if (!b.media.isEmpty())
+        o[QStringLiteral("media")] = b.media;
+    if (!b.url.isEmpty())
+        o[QStringLiteral("url")] = b.url;
+    if (b.width)
+        o[QStringLiteral("w")] = b.width;
+    if (!b.align.isEmpty())
+        o[QStringLiteral("al")] = b.align;
+    if (!b.pageId.isEmpty())
+        o[QStringLiteral("page")] = b.pageId;
+    if (!b.syncId.isEmpty())
+        o[QStringLiteral("sync")] = b.syncId;
+    if (!b.spans.isEmpty())
+        o[QStringLiteral("r")] = spansToJson(b.spans);
+    if (!b.caption.isEmpty())
+        o[QStringLiteral("cap")] = spansToJson(b.caption);
+    if (!b.data.isEmpty())
+        o[QStringLiteral("x")] = b.data;
+    if (!b.columns.isEmpty()) {
+        QJsonArray cols;
+        for (const QList<Block> &col : b.columns)
+            cols.append(blocksToJson(col));
+        o[QStringLiteral("cols")] = cols;
+        QJsonArray w;
+        for (double x : b.widths)
+            w.append(x);
+        if (!w.isEmpty())
+            o[QStringLiteral("cw")] = w;
+    } else if (!b.widths.isEmpty()) {
+        QJsonArray w;
+        for (double x : b.widths)
+            w.append(x);
+        o[QStringLiteral("cw")] = w;
+    }
+    if (!b.rows.isEmpty()) {
+        QJsonArray rows;
+        for (const QList<Cell> &row : b.rows) {
+            QJsonArray cells;
+            for (const Cell &cell : row)
+                cells.append(spansToJson(cell));
+            rows.append(cells);
+        }
+        o[QStringLiteral("rows")] = rows;
+    }
+    return o;
+}
+
 QJsonArray blocksToJson(const QList<Block> &blocks)
 {
     QJsonArray arr;
-    for (const Block &b : blocks) {
-        QJsonObject o;
-        o[QStringLiteral("t")] = blockTypeKey(b.type);
-        if (!b.id.isEmpty())
-            o[QStringLiteral("id")] = b.id;
-        if (b.depth)
-            o[QStringLiteral("d")] = b.depth;
-        if (b.checked)
-            o[QStringLiteral("checked")] = true;
-        if (b.collapsed)
-            o[QStringLiteral("collapsed")] = true;
-        if (b.toggleable)
-            o[QStringLiteral("tg")] = true;
-        if (!b.language.isEmpty())
-            o[QStringLiteral("lang")] = b.language;
-        if (!b.icon.isEmpty())
-            o[QStringLiteral("icon")] = b.icon;
-        if (b.color)
-            o[QStringLiteral("fg")] = b.color;
-        if (b.background)
-            o[QStringLiteral("bg")] = b.background;
-        if (!b.media.isEmpty())
-            o[QStringLiteral("media")] = b.media;
-        if (!b.url.isEmpty())
-            o[QStringLiteral("url")] = b.url;
-        if (b.width)
-            o[QStringLiteral("w")] = b.width;
-        if (!b.align.isEmpty())
-            o[QStringLiteral("al")] = b.align;
-        if (!b.pageId.isEmpty())
-            o[QStringLiteral("page")] = b.pageId;
-        if (!b.syncId.isEmpty())
-            o[QStringLiteral("sync")] = b.syncId;
-        if (!b.spans.isEmpty())
-            o[QStringLiteral("r")] = spansToJson(b.spans);
-        if (!b.caption.isEmpty())
-            o[QStringLiteral("cap")] = spansToJson(b.caption);
-        if (!b.data.isEmpty())
-            o[QStringLiteral("x")] = b.data;
-        if (!b.columns.isEmpty()) {
-            QJsonArray cols;
-            for (const QList<Block> &col : b.columns)
-                cols.append(blocksToJson(col));
-            o[QStringLiteral("cols")] = cols;
-            QJsonArray w;
-            for (double x : b.widths)
-                w.append(x);
-            if (!w.isEmpty())
-                o[QStringLiteral("cw")] = w;
-        } else if (!b.widths.isEmpty()) {
-            QJsonArray w;
-            for (double x : b.widths)
-                w.append(x);
-            o[QStringLiteral("cw")] = w;
-        }
-        if (!b.rows.isEmpty()) {
-            QJsonArray rows;
-            for (const QList<Cell> &row : b.rows) {
-                QJsonArray cells;
-                for (const Cell &cell : row)
-                    cells.append(spansToJson(cell));
-                rows.append(cells);
-            }
-            o[QStringLiteral("rows")] = rows;
-        }
-        arr.append(o);
-    }
+    for (const Block &b : blocks)
+        arr.append(blockToJson(b));
     return arr;
+}
+
+Block blockFromJson(const QJsonObject &o)
+{
+    Block b;
+    b.type = blockTypeFromKey(o.value(QStringLiteral("t")).toString());
+    b.id = o.value(QStringLiteral("id")).toString();
+    b.depth = qBound(0, o.value(QStringLiteral("d")).toInt(), 12);
+    b.checked = o.value(QStringLiteral("checked")).toBool();
+    b.collapsed = o.value(QStringLiteral("collapsed")).toBool();
+    b.toggleable = o.value(QStringLiteral("tg")).toBool();
+    b.language = o.value(QStringLiteral("lang")).toString();
+    b.icon = o.value(QStringLiteral("icon")).toString();
+    b.color = qBound(0, o.value(QStringLiteral("fg")).toInt(), kTextShadeCount - 1);
+    b.background = qBound(0, o.value(QStringLiteral("bg")).toInt(), kHighlightShadeCount - 1);
+    b.media = o.value(QStringLiteral("media")).toString();
+    b.url = o.value(QStringLiteral("url")).toString();
+    b.width = qMax(0, o.value(QStringLiteral("w")).toInt());
+    b.align = o.value(QStringLiteral("al")).toString();
+    b.pageId = o.value(QStringLiteral("page")).toString();
+    b.syncId = o.value(QStringLiteral("sync")).toString();
+    b.spans = spansFromJson(o.value(QStringLiteral("r")).toArray());
+    b.caption = spansFromJson(o.value(QStringLiteral("cap")).toArray());
+    b.data = o.value(QStringLiteral("x")).toObject();
+    for (const QJsonValue &col : o.value(QStringLiteral("cols")).toArray())
+        b.columns.append(blocksFromJson(col.toArray()));
+    for (const QJsonValue &w : o.value(QStringLiteral("cw")).toArray())
+        b.widths.append(w.toDouble());
+    for (const QJsonValue &row : o.value(QStringLiteral("rows")).toArray()) {
+        QList<Cell> cells;
+        for (const QJsonValue &cell : row.toArray())
+            cells.append(spansFromJson(cell.toArray()));
+        b.rows.append(cells);
+    }
+    return b;
 }
 
 QList<Block> blocksFromJson(const QJsonArray &array)
 {
     QList<Block> blocks;
     blocks.reserve(array.size());
-    for (const QJsonValue &v : array) {
-        const QJsonObject o = v.toObject();
-        Block b;
-        b.type = blockTypeFromKey(o.value(QStringLiteral("t")).toString());
-        b.id = o.value(QStringLiteral("id")).toString();
-        b.depth = qBound(0, o.value(QStringLiteral("d")).toInt(), 12);
-        b.checked = o.value(QStringLiteral("checked")).toBool();
-        b.collapsed = o.value(QStringLiteral("collapsed")).toBool();
-        b.toggleable = o.value(QStringLiteral("tg")).toBool();
-        b.language = o.value(QStringLiteral("lang")).toString();
-        b.icon = o.value(QStringLiteral("icon")).toString();
-        b.color = qBound(0, o.value(QStringLiteral("fg")).toInt(), kTextShadeCount - 1);
-        b.background = qBound(0, o.value(QStringLiteral("bg")).toInt(), kHighlightShadeCount - 1);
-        b.media = o.value(QStringLiteral("media")).toString();
-        b.url = o.value(QStringLiteral("url")).toString();
-        b.width = qMax(0, o.value(QStringLiteral("w")).toInt());
-        b.align = o.value(QStringLiteral("al")).toString();
-        b.pageId = o.value(QStringLiteral("page")).toString();
-        b.syncId = o.value(QStringLiteral("sync")).toString();
-        b.spans = spansFromJson(o.value(QStringLiteral("r")).toArray());
-        b.caption = spansFromJson(o.value(QStringLiteral("cap")).toArray());
-        b.data = o.value(QStringLiteral("x")).toObject();
-        for (const QJsonValue &col : o.value(QStringLiteral("cols")).toArray())
-            b.columns.append(blocksFromJson(col.toArray()));
-        for (const QJsonValue &w : o.value(QStringLiteral("cw")).toArray())
-            b.widths.append(w.toDouble());
-        for (const QJsonValue &row : o.value(QStringLiteral("rows")).toArray()) {
-            QList<Cell> cells;
-            for (const QJsonValue &cell : row.toArray())
-                cells.append(spansFromJson(cell.toArray()));
-            b.rows.append(cells);
-        }
-        blocks.append(b);
-    }
+    for (const QJsonValue &v : array)
+        blocks.append(blockFromJson(v.toObject()));
     return blocks;
 }
 

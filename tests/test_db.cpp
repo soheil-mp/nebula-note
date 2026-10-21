@@ -8,7 +8,12 @@
 
 #include <QGuiApplication>
 #include <QJsonArray>
+#include <QDir>
+#include <QFileInfo>
+#include <QJsonDocument>
 #include <QSignalSpy>
+#include <QSqlDatabase>
+#include <QSqlQuery>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
@@ -61,6 +66,28 @@ class DbTests : public QObject
 private:
     QTemporaryDir m_dir;
     Workspace *m_ws = nullptr;
+
+    // A second, raw connection to a workspace file (to check what's stored).
+    static QVariant scalar(const QString &file, const QString &sql, const QVariantList &args = {})
+    {
+        QVariant out;
+        {
+            QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("raw"));
+            db.setDatabaseName(file);
+            if (db.open()) {
+                QSqlQuery q(db);
+                q.prepare(sql);
+                for (const QVariant &a : args)
+                    q.addBindValue(a);
+                if (q.exec() && q.next())
+                    out = q.value(0);
+            }
+            db.close();
+        }
+        QSqlDatabase::removeDatabase(QStringLiteral("raw"));
+        return out;
+    }
+    QString dbFile() const { return QDir(m_ws->directory()).filePath(QStringLiteral("workspace.db")); }
 
 private slots:
     void initTestCase()
@@ -833,6 +860,242 @@ private slots:
         QCOMPARE(m_ws->search("spiral", o).first().id, child);
         o.createdAfter = m_ws->page(other)->created;
         QCOMPARE(m_ws->search("spiral", o).size(), 2);
+    }
+
+    // ---- storage (format 2) ----------------------------------------------------
+
+    void savesWriteOnlyChangedBlocks()
+    {
+        QList<Block> blocks;
+        for (int i = 0; i < 50; ++i)
+            blocks << Block::make(BlockType::Paragraph, QStringLiteral("line %1").arg(i));
+        const QString p = m_ws->createPage({}, "Long", blocks);
+        blocks = m_ws->content(p);
+        QCOMPARE(scalar(dbFile(), "SELECT COUNT(*) FROM blocks WHERE page_id=?", {p}).toInt(), 50);
+        // Editing one block rewrites only its row.
+        const QByteArray before = scalar(dbFile(), "SELECT data FROM blocks WHERE page_id=? AND id=?", {p, blocks[10].id}).toByteArray();
+        blocks[20].setPlainText("changed");
+        m_ws->setContent(p, blocks);
+        QCOMPARE(scalar(dbFile(), "SELECT data FROM blocks WHERE page_id=? AND id=?", {p, blocks[10].id}).toByteArray(), before);
+        QVERIFY(scalar(dbFile(), "SELECT data FROM blocks WHERE page_id=? AND id=?", {p, blocks[20].id}).toByteArray().contains("changed"));
+        // Order survives inserts in the middle, many at the same spot, moves and deletes…
+        for (int i = 0; i < 70; ++i)
+            blocks.insert(25, Block::make(BlockType::Paragraph, QStringLiteral("wedge %1").arg(i)));
+        blocks.move(0, 60);
+        blocks.removeAt(3);
+        m_ws->setContent(p, blocks);
+        QStringList expect;
+        for (const Block &b : blocks)
+            expect << b.plainText();
+        // …also when read back from the file, not the cache.
+        const QString dir = m_ws->directory();
+        m_ws->close();
+        QVERIFY(m_ws->open(dir));
+        QStringList read;
+        for (const Block &b : m_ws->content(p))
+            read << b.plainText();
+        QCOMPARE(read, expect);
+        QCOMPARE(read.size(), 119);
+    }
+
+    void searchUsesTheIndex()
+    {
+        const QString a = m_ws->createPage({}, "Astronomy", {Block::make(BlockType::Paragraph, "The heliopause marks the edge."),
+                                                            Block::make(BlockType::Paragraph, "Café near the observatory")});
+        const QString b = m_ws->createPage({}, "Biology", {Block::make(BlockType::Paragraph, "Cells and membranes")});
+        // Any part of a word, several terms (all must match), accents ignored.
+        QCOMPARE(m_ws->search("liopau").size(), 1);
+        QCOMPARE(m_ws->search("liopau").first().id, a);
+        QVERIFY(m_ws->search("liopau").first().snippet.contains("heliopause"));
+        QCOMPARE(m_ws->search("edge helio").size(), 1);
+        QCOMPARE(m_ws->search("edge cells").size(), 0);
+        QCOMPARE(m_ws->search("cafe").size(), 1);
+        // One- and two-letter terms still work.
+        QCOMPARE(m_ws->search("me").size(), 1); // "membranes"
+        QCOMPARE(m_ws->search("th").first().id, a);
+        // Edits are found right away (the index catches up before a search).
+        m_ws->setContent(b, {Block::make(BlockType::Paragraph, "Mitochondria everywhere")});
+        QCOMPARE(m_ws->search("mitochond").size(), 1);
+        QCOMPARE(m_ws->search("membranes").size(), 0);
+        // Trashed pages don't show; deleted ones leave no search text behind.
+        m_ws->trash(b);
+        QCOMPARE(m_ws->search("mitochond").size(), 0);
+        m_ws->deleteForever(b);
+        QCOMPARE(scalar(dbFile(), "SELECT COUNT(*) FROM search_map WHERE page_id=?", {b}).toInt(), 0);
+    }
+
+    void deleteForeverLeavesNothing()
+    {
+        const QString p = m_ws->createPage({}, "Secret plans", {Block::make(BlockType::Paragraph, "v1")});
+        QVERIFY(m_ws->snapshot(p, true));
+        m_ws->setContent(p, {Block::make(BlockType::Paragraph, "v2")});
+        QVERIFY(m_ws->snapshot(p, true));
+        m_ws->addComment(p, {}, {}, "A thought");
+        Span when;
+        when.text = QString(QChar::ObjectReplacementCharacter);
+        when.date = "2030-01-01";
+        when.remind = true;
+        Block withDate = Block::make(BlockType::Paragraph);
+        withDate.spans = {when};
+        m_ws->setContent(p, {withDate});
+        QCOMPARE(scalar(dbFile(), "SELECT COUNT(*) FROM reminders WHERE page_id=?", {p}).toInt(), 1);
+        m_ws->search("anything"); // index it
+        m_ws->trash(p);
+        m_ws->deleteForever(p);
+        for (const char *table : {"versions", "comments", "reminders", "blocks", "synced_refs", "search_map"})
+            QCOMPARE(scalar(dbFile(), QStringLiteral("SELECT COUNT(*) FROM %1 WHERE page_id=?").arg(QLatin1String(table)), {p}).toInt(), 0);
+        QCOMPARE(scalar(dbFile(), "SELECT COUNT(*) FROM pages WHERE id=?", {p}).toInt(), 0);
+    }
+
+    void cleanUpRemovesLeftovers()
+    {
+        const QString p = m_ws->createPage({}, "Keep", {Block::make(BlockType::Paragraph, "kept")});
+        m_ws->snapshot(p, true);
+        // Rows left behind by an older version of the app, for a page that's gone.
+        {
+            QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("orphans"));
+            db.setDatabaseName(dbFile());
+            QVERIFY(db.open());
+            QSqlQuery q(db);
+            QVERIFY(q.exec("INSERT INTO versions(page_id, created, title, content) VALUES('gone', 1, 'x', '[]')"));
+            QVERIFY(q.exec("INSERT INTO comments(id, thread, page_id, body) VALUES('c1', 'c1', 'gone', 'hi')"));
+            QVERIFY(q.exec("INSERT INTO blocks(page_id, id, sort, data) VALUES('gone', 'b', 1, '{}')"));
+            db.close();
+        }
+        QSqlDatabase::removeDatabase(QStringLiteral("orphans"));
+        m_ws->cleanUp();
+        QCOMPARE(scalar(dbFile(), "SELECT COUNT(*) FROM versions WHERE page_id='gone'").toInt(), 0);
+        QCOMPARE(scalar(dbFile(), "SELECT COUNT(*) FROM comments WHERE page_id='gone'").toInt(), 0);
+        QCOMPARE(scalar(dbFile(), "SELECT COUNT(*) FROM blocks WHERE page_id='gone'").toInt(), 0);
+        QCOMPARE(scalar(dbFile(), "SELECT COUNT(*) FROM versions WHERE page_id=?", {p}).toInt(), 1);
+        QCOMPARE(m_ws->content(p).first().plainText(), QStringLiteral("kept"));
+    }
+
+    void versionsAreCompressed()
+    {
+        QList<Block> blocks;
+        for (int i = 0; i < 200; ++i)
+            blocks << Block::make(BlockType::Paragraph, QStringLiteral("The same sentence, again and again, number %1.").arg(i));
+        const QString p = m_ws->createPage({}, "Repetitive", blocks);
+        QVERIFY(m_ws->snapshot(p, true));
+        const qint64 stored = scalar(dbFile(), "SELECT length(content) FROM versions WHERE page_id=?", {p}).toLongLong();
+        const qint64 raw = blocksToJsonString(m_ws->content(p)).toUtf8().size();
+        QVERIFY2(stored * 3 < raw, qPrintable(QStringLiteral("%1 vs %2").arg(stored).arg(raw)));
+        QCOMPARE(m_ws->versionContent(m_ws->versions(p).first().id).size(), 200);
+    }
+
+    // A workspace saved by the first format (content as one JSON text per
+    // page) opens, gets backed up, and comes out the same.
+    void migratesFormatOne()
+    {
+        const QString dir = m_dir.path() + QStringLiteral("/old-format");
+        QDir().mkpath(dir);
+        const QString file = dir + QStringLiteral("/workspace.db");
+        const QString page = QStringLiteral("p1"), other = QStringLiteral("p2"), sync = QStringLiteral("s1");
+        {
+            QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("v1"));
+            db.setDatabaseName(file);
+            QVERIFY(db.open());
+            QSqlQuery q(db);
+            QVERIFY(q.exec("CREATE TABLE pages(id TEXT PRIMARY KEY, parent_id TEXT NOT NULL DEFAULT '', kind INTEGER NOT NULL DEFAULT 0, "
+                           "title TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT '', cover TEXT NOT NULL DEFAULT '', "
+                           "cover_pos REAL NOT NULL DEFAULT 0.5, content TEXT NOT NULL DEFAULT '[]', plain TEXT NOT NULL DEFAULT '', "
+                           "props TEXT NOT NULL DEFAULT '{}', schema TEXT NOT NULL DEFAULT '', options TEXT NOT NULL DEFAULT '{}', "
+                           "sort REAL NOT NULL DEFAULT 0, favorite REAL NOT NULL DEFAULT 0, created INTEGER NOT NULL DEFAULT 0, "
+                           "updated INTEGER NOT NULL DEFAULT 0, visited INTEGER NOT NULL DEFAULT 0, trashed INTEGER NOT NULL DEFAULT 0)"));
+            QVERIFY(q.exec("CREATE TABLE links(src TEXT NOT NULL, dst TEXT NOT NULL, PRIMARY KEY(src, dst))"));
+            QVERIFY(q.exec("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT)"));
+            QVERIFY(q.exec("CREATE TABLE synced(id TEXT PRIMARY KEY, origin TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '[]', "
+                           "updated INTEGER NOT NULL DEFAULT 0)"));
+            QVERIFY(q.exec("CREATE TABLE comments(id TEXT PRIMARY KEY, thread TEXT NOT NULL, page_id TEXT NOT NULL, block_id TEXT NOT NULL "
+                           "DEFAULT '', quote TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL DEFAULT 0, "
+                           "edited INTEGER NOT NULL DEFAULT 0, resolved INTEGER NOT NULL DEFAULT 0)"));
+            QVERIFY(q.exec("CREATE TABLE versions(id INTEGER PRIMARY KEY AUTOINCREMENT, page_id TEXT NOT NULL, created INTEGER NOT NULL, "
+                           "title TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '[]', name TEXT NOT NULL DEFAULT '')"));
+            QVERIFY(q.exec("CREATE TABLE reminders(id TEXT PRIMARY KEY, page_id TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', at INTEGER "
+                           "NOT NULL, done INTEGER NOT NULL DEFAULT 0)"));
+            QVERIFY(q.exec("INSERT INTO meta(key, value) VALUES('schema', '1')"));
+            Block shared;
+            shared.type = BlockType::Synced;
+            shared.syncId = sync;
+            const QList<Block> content = {Block::make(BlockType::Heading1, "Orbits"), Block::make(BlockType::Paragraph, "Kepler's laws"),
+                                          Block::make(BlockType::Paragraph, "no id here"), shared};
+            QList<Block> withIds = content;
+            withIds[0].id = "b0";
+            withIds[1].id = "b1";
+            withIds[3].id = "b0"; // a repeated id gets a new one
+            const QString json = blocksToJsonString(withIds);
+            q.prepare("INSERT INTO pages(id, title, content, plain, created, updated) VALUES(?, 'Physics', ?, ?, 1, 1)");
+            q.addBindValue(page);
+            q.addBindValue(json);
+            q.addBindValue(QStringLiteral("Orbits\nKepler's laws\nno id here\nShared text"));
+            QVERIFY(q.exec());
+            QVERIFY(q.exec("INSERT INTO pages(id, title, content, plain, created, updated, sort) VALUES('p2', 'Empty', '[]', '', 2, 2, 2)"));
+            q.prepare("INSERT INTO synced(id, origin, content) VALUES(?, ?, ?)");
+            q.addBindValue(sync);
+            q.addBindValue(page);
+            q.addBindValue(blocksToJsonString({Block::make(BlockType::Paragraph, "Shared text")}));
+            QVERIFY(q.exec());
+            q.prepare("INSERT INTO versions(page_id, created, title, content) VALUES(?, 5, 'Physics (old)', ?)");
+            q.addBindValue(page);
+            q.addBindValue(blocksToJsonString({Block::make(BlockType::Paragraph, "first draft")}));
+            QVERIFY(q.exec());
+            QVERIFY(q.exec("INSERT INTO comments(id, thread, page_id, body, created) VALUES('c1', 'c1', 'p1', 'nice', 3)"));
+            db.close();
+        }
+        QSqlDatabase::removeDatabase(QStringLiteral("v1"));
+
+        Workspace ws;
+        QVERIFY2(ws.open(dir), qPrintable(ws.lastError()));
+        QCOMPARE(scalar(file, "PRAGMA user_version").toInt(), Workspace::formatVersion());
+        QVERIFY(QFileInfo::exists(dir + QStringLiteral("/backups/workspace-before-format-2.db")));
+        const QList<Block> c = ws.content(page);
+        QCOMPARE(c.size(), 4); // the synced region expands to its one block
+        QCOMPARE(c[0].plainText(), QStringLiteral("Orbits"));
+        QCOMPARE(c[1].plainText(), QStringLiteral("Kepler's laws"));
+        QCOMPARE(c[3].plainText(), QStringLiteral("Shared text"));
+        QCOMPARE(c[3].syncId, sync);
+        QSet<QString> ids;
+        for (const Block &b : c.mid(0, 3))
+            ids.insert(b.id);
+        QCOMPARE(ids.size(), 3);
+        QVERIFY(!ids.contains(QString()));
+        QCOMPARE(ws.syncedPages(sync), QStringList{page});
+        QCOMPARE(ws.search("kepler").size(), 1);
+        QCOMPARE(ws.search("shared text").size(), 1);
+        QCOMPARE(ws.comments(page).size(), 1);
+        const QList<Workspace::Version> vs = ws.versions(page);
+        QCOMPARE(vs.size(), 1);
+        QString title;
+        QCOMPARE(ws.versionContent(vs.first().id, &title).first().plainText(), QStringLiteral("first draft"));
+        QCOMPARE(title, QStringLiteral("Physics (old)"));
+        QCOMPARE(scalar(file, "SELECT zip FROM versions").toInt(), 1);
+        // The page differs from its last version: the next snapshot keeps it.
+        QVERIFY(ws.snapshot(page, false, 0));
+        // Saving after the upgrade works as usual.
+        QList<Block> edited = c;
+        edited[1].setPlainText("Newton's laws");
+        ws.setContent(page, edited);
+        QCOMPARE(ws.content(page)[1].plainText(), QStringLiteral("Newton's laws"));
+        QCOMPARE(ws.content(other).size(), 0);
+        ws.close();
+        // Opening again needs no upgrade (and no second backup).
+        QVERIFY(ws.open(dir));
+        QCOMPARE(QDir(dir + QStringLiteral("/backups")).entryList({QStringLiteral("workspace-before-format-*")}).size(), 1);
+        QCOMPARE(ws.content(page)[1].plainText(), QStringLiteral("Newton's laws"));
+    }
+
+    void refusesNewerFormats()
+    {
+        const QString dir = m_dir.path() + QStringLiteral("/future-format");
+        {
+            Workspace ws;
+            QVERIFY(ws.open(dir));
+        }
+        scalar(dir + QStringLiteral("/workspace.db"), QStringLiteral("PRAGMA user_version=%1").arg(Workspace::formatVersion() + 1));
+        Workspace ws;
+        QVERIFY(!ws.open(dir));
+        QVERIFY(ws.lastError().contains(QStringLiteral("newer")));
     }
 
     // ---- speed paths (they must keep the same results) ------------------------

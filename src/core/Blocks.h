@@ -130,6 +130,8 @@ struct Block {
     static QString newId();
 };
 
+QJsonObject blockToJson(const Block &block);
+Block blockFromJson(const QJsonObject &object);
 QJsonArray blocksToJson(const QList<Block> &blocks);
 QList<Block> blocksFromJson(const QJsonArray &array);
 QString blocksToJsonString(const QList<Block> &blocks);

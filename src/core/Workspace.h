@@ -10,14 +10,16 @@
 #include <QSet>
 #include <QSqlDatabase>
 #include <QStringList>
+#include <QTimer>
 
 #include <functional>
 #include <memory>
 
 // The workspace: every page, database and row, stored in one SQLite file.
 // Page metadata is cached in memory; content, properties and schemas are
-// read on demand. All writes go through here and announce themselves with
-// signals so every view stays in sync.
+// read on demand. A page's content is stored block by block, so saving
+// writes only the blocks that changed. All writes go through here and
+// announce themselves with signals so every view stays in sync.
 class Workspace : public QObject, public DbLookup
 {
     Q_OBJECT
@@ -223,6 +225,11 @@ public:
     QString backup(bool force = false, int keep = 7);
     // Runs `fn` inside one transaction; signals are sent afterwards.
     void batch(const std::function<void()> &fn);
+    // Removes what deleted pages left behind (versions, comments, search
+    // entries…). Runs once a day by itself.
+    void cleanUp();
+    // The database file's format version (PRAGMA user_version).
+    static int formatVersion();
 
 signals:
     void treeChanged();                            // pages added, moved, trashed, restored, deleted
@@ -237,9 +244,25 @@ signals:
     void versionsChanged(const QString &pageId);
 
 private:
+    // One top-level block as stored: its sort key and its JSON.
+    struct StoredBlock {
+        QString id;
+        double sort = 0;
+        Block block;
+        QByteArray json;
+    };
     bool exec(const QString &sql, const QVariantList &args = {}) const;
+    bool migrate(bool fresh);
+    bool migrateTo2();
     void loadMeta();
-    QString insertPage(const PageMeta &meta, const QString &content, const QJsonObject &props, const Schema *schema);
+    QString insertPage(const PageMeta &meta, const QList<Block> &stored, const QJsonObject &props, const Schema *schema);
+    QList<StoredBlock> storedBlocks(const QString &id) const;
+    QByteArray storedJson(const QString &id) const; // the page's stored blocks as one JSON array
+    void writeBlocks(const QString &id, const QList<Block> &stored);
+    void dropBlocks(const QString &id);
+    void updateSyncedRefs(const QString &id, const QList<Block> &stored);
+    void markSearchDirty(const QString &id);
+    void flushSearch() const;
     double sortAfter(const QString &parentId, const QString &afterId, bool rowsOnly) const;
     void touch(const QString &id);
     void updateLinks(const QString &id, const QList<Block> &blocks);
@@ -263,6 +286,14 @@ private:
     mutable bool m_childIndexDirty = true;
     mutable QHash<QString, std::shared_ptr<Schema>> m_schemaCache;
     mutable QHash<QString, QJsonObject> m_propsCache;
+    // Stored blocks of recently read or written pages (newest last).
+    mutable QHash<QString, QList<StoredBlock>> m_blockCache;
+    mutable QStringList m_blockCacheOrder;
+    // Pages whose search text is out of date: indexed a moment after
+    // editing stops, and before any search.
+    mutable QSet<QString> m_searchDirty;
+    QTimer *m_searchTimer = nullptr;
+    QString m_tokenizer; // "trigram", "unicode61" or "" (no FTS5: plain LIKE)
     int m_batchDepth = 0;
     QList<std::function<void()>> m_pendingSignals;
     QSet<QString> m_pendingKeys;

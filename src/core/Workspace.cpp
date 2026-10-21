@@ -10,6 +10,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QPointer>
+#include <QRegularExpression>
 #include <QSet>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -20,7 +21,7 @@ namespace
 {
 QPointer<Workspace> g_instance;
 int g_connectionCounter = 0;
-constexpr int kSchemaVersion = 1;
+constexpr int kBlockCachePages = 12;
 
 QString toJsonString(const QJsonObject &o)
 {
@@ -45,6 +46,12 @@ Workspace::Workspace(QObject *parent)
     : QObject(parent)
 {
     g_instance = this;
+    m_searchTimer = new QTimer(this);
+    m_searchTimer->setSingleShot(true);
+    // Indexing waits until editing pauses (a very long page takes ~0.1 s);
+    // a search catches up first, so results are never stale.
+    m_searchTimer->setInterval(4000);
+    connect(m_searchTimer, &QTimer::timeout, this, [this] { flushSearch(); });
 }
 
 Workspace::~Workspace()
@@ -110,28 +117,47 @@ bool Workspace::open(const QString &directory)
                     && exec(QStringLiteral("CREATE INDEX IF NOT EXISTS versions_page ON versions(page_id)"))
                     && exec(QStringLiteral("CREATE TABLE IF NOT EXISTS reminders(id TEXT PRIMARY KEY, page_id TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', "
                                            "at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0)"));
-    if (!ok)
+    if (!ok || !migrate(m_fresh)) {
+        if (m_error.isEmpty())
+            m_error = m_db.lastError().text();
+        close();
         return false;
-    if (metaValue(QStringLiteral("schema")).isEmpty())
-        setMetaValue(QStringLiteral("schema"), QString::number(kSchemaVersion));
+    }
+    m_tokenizer = metaValue(QStringLiteral("searchTokenizer"));
+    // Fresh statistics for the query planner (fast; see sqlite.org/lang_analyze.html).
+    exec(QStringLiteral("PRAGMA optimize=0x10002"));
     loadMeta();
     g_instance = this;
     setDbLookup(this);
+    // Leftovers of deleted pages, once a day.
+    const QString today = QDate::currentDate().toString(Qt::ISODate);
+    if (metaValue(QStringLiteral("lastCleanUp")) != today) {
+        cleanUp();
+        setMetaValue(QStringLiteral("lastCleanUp"), today);
+    }
     return true;
 }
 
 void Workspace::close()
 {
     if (m_db.isValid()) {
+        if (m_db.isOpen()) {
+            flushSearch();
+            exec(QStringLiteral("PRAGMA optimize"));
+        }
         m_db.close();
         m_db = QSqlDatabase();
         QSqlDatabase::removeDatabase(m_connection);
     }
+    m_searchTimer->stop();
+    m_searchDirty.clear();
     m_pages.clear();
     m_children.clear();
     m_childIndexDirty = true;
     m_schemaCache.clear();
     m_propsCache.clear();
+    m_blockCache.clear();
+    m_blockCacheOrder.clear();
     if (dbLookup() == this)
         setDbLookup(nullptr);
 }
@@ -447,16 +473,13 @@ double Workspace::sortAfter(const QString &parentId, const QString &afterId, boo
     return (sorts[afterIndex] + sorts[afterIndex + 1]) / 2.0;
 }
 
-QString Workspace::insertPage(const PageMeta &meta, const QString &content, const QJsonObject &props, const Schema *schema)
+QString Workspace::insertPage(const PageMeta &meta, const QList<Block> &stored, const QJsonObject &props, const Schema *schema)
 {
-    const QList<Block> blocks = blocksFromJsonString(content);
-    const bool ok = exec(QStringLiteral("INSERT INTO pages(id, parent_id, kind, title, icon, cover, cover_pos, content, "
-                                        "plain, props, schema, options, sort, favorite, created, updated, visited, trashed) "
-                                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"),
-                         {meta.id, meta.parentId, int(meta.kind), meta.title, meta.icon, meta.cover, meta.coverPos, content,
-                          blocksPlainText(blocks), toJsonString(props), schema ? toJsonString(schema->toJson()) : QString(),
-                          QStringLiteral("{}"), meta.sort, meta.favorite, meta.created, meta.updated, meta.visited,
-                          meta.trashed});
+    const bool ok = exec(QStringLiteral("INSERT INTO pages(id, parent_id, kind, title, icon, cover, cover_pos, props, schema, options, "
+                                        "sort, favorite, created, updated, visited, trashed, rev) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)"),
+                         {meta.id, meta.parentId, int(meta.kind), meta.title, meta.icon, meta.cover, meta.coverPos,
+                          toJsonString(props), schema ? toJsonString(schema->toJson()) : QString(), QStringLiteral("{}"), meta.sort,
+                          meta.favorite, meta.created, meta.updated, meta.visited, meta.trashed});
     if (!ok)
         return {};
     m_pages.insert(meta.id, meta);
@@ -472,7 +495,11 @@ QString Workspace::insertPage(const PageMeta &meta, const QString &content, cons
         });
         kids.insert(pos, meta.id);
     }
-    updateLinks(meta.id, blocks);
+    m_blockCache.insert(meta.id, {}); // nothing stored yet: no need to look
+    writeBlocks(meta.id, stored);
+    updateSyncedRefs(meta.id, stored);
+    updateLinks(meta.id, stored);
+    markSearchDirty(meta.id);
     return meta.id;
 }
 
@@ -488,7 +515,7 @@ QString Workspace::createPage(const QString &parentId, const QString &title, con
     m.created = m.updated = Ids::now();
     QList<Block> blocks = content;
     ensureBlockIds(blocks);
-    const QString id = insertPage(m, blocksToJsonString(blocks), {}, nullptr);
+    const QString id = insertPage(m, blocks, {}, nullptr);
     if (!id.isEmpty())
         emitLater(QStringLiteral("tree"), [this] { emit treeChanged(); });
     return id;
@@ -504,7 +531,7 @@ QString Workspace::createDatabase(const QString &parentId, const QString &title,
     m.title = title;
     m.sort = sortAfter(parentId, afterId, false);
     m.created = m.updated = Ids::now();
-    const QString id = insertPage(m, QStringLiteral("[]"), {}, &schema);
+    const QString id = insertPage(m, {}, {}, &schema);
     if (!id.isEmpty())
         emitLater(QStringLiteral("tree"), [this] { emit treeChanged(); });
     return id;
@@ -532,7 +559,7 @@ QString Workspace::createRow(const QString &databaseId, const QString &title, co
     }
     QList<Block> blocks = content;
     ensureBlockIds(blocks);
-    const QString id = insertPage(m, blocksToJsonString(blocks), values, nullptr);
+    const QString id = insertPage(m, blocks, values, nullptr);
     if (id.isEmpty())
         return id;
     for (const auto &r : relations)
@@ -571,7 +598,7 @@ QString Workspace::duplicate(const QString &id)
     batch([&] {
         for (const QString &old : ids) {
             QSqlQuery q(m_db);
-            q.prepare(QStringLiteral("SELECT content, props, schema, options FROM pages WHERE id=?"));
+            q.prepare(QStringLiteral("SELECT props, schema, options FROM pages WHERE id=?"));
             q.addBindValue(old);
             if (!q.exec() || !q.next())
                 continue;
@@ -586,7 +613,9 @@ QString Workspace::duplicate(const QString &id)
             }
             m.created = m.updated = Ids::now();
             m.visited = 0;
-            QList<Block> blocks = blocksFromJsonString(q.value(0).toString());
+            QList<Block> blocks;
+            for (const StoredBlock &sb : storedBlocks(old))
+                blocks.append(sb.block);
             for (Block &b : blocks) {
                 if (remap.contains(b.pageId))
                     b.pageId = remap[b.pageId];
@@ -594,13 +623,12 @@ QString Workspace::duplicate(const QString &id)
                     if (remap.contains(s.mention))
                         s.mention = remap[s.mention];
             }
-            const QString schemaJson = q.value(2).toString();
+            const QString schemaJson = q.value(1).toString();
             Schema schema;
             if (!schemaJson.isEmpty())
                 schema = Schema::fromJson(fromJsonString(schemaJson));
-            insertPage(m, blocksToJsonString(blocks), fromJsonString(q.value(1).toString()),
-                       schemaJson.isEmpty() ? nullptr : &schema);
-            exec(QStringLiteral("UPDATE pages SET options=? WHERE id=?"), {q.value(3).toString(), m.id});
+            insertPage(m, blocks, fromJsonString(q.value(0).toString()), schemaJson.isEmpty() ? nullptr : &schema);
+            exec(QStringLiteral("UPDATE pages SET options=? WHERE id=?"), {q.value(2).toString(), m.id});
         }
         emitLater(QStringLiteral("tree"), [this] { emit treeChanged(); });
     });
@@ -611,12 +639,205 @@ QString Workspace::duplicate(const QString &id)
 
 QList<Block> Workspace::content(const QString &id) const
 {
+    QList<Block> blocks;
+    for (const StoredBlock &sb : storedBlocks(id))
+        blocks.append(sb.block);
+    return expandSynced(blocks);
+}
+
+QList<Workspace::StoredBlock> Workspace::storedBlocks(const QString &id) const
+{
+    auto cached = m_blockCache.constFind(id);
+    if (cached != m_blockCache.constEnd()) {
+        m_blockCacheOrder.removeOne(id);
+        m_blockCacheOrder.append(id);
+        return *cached;
+    }
+    QList<StoredBlock> out;
     QSqlQuery q(m_db);
-    q.prepare(QStringLiteral("SELECT content FROM pages WHERE id=?"));
+    q.setForwardOnly(true);
+    q.prepare(QStringLiteral("SELECT id, sort, data FROM blocks WHERE page_id=? ORDER BY sort"));
     q.addBindValue(id);
-    if (q.exec() && q.next())
-        return expandSynced(blocksFromJsonString(q.value(0).toString()));
-    return {};
+    if (q.exec()) {
+        while (q.next()) {
+            StoredBlock sb;
+            sb.id = q.value(0).toString();
+            sb.sort = q.value(1).toDouble();
+            sb.json = q.value(2).toByteArray();
+            sb.block = blockFromJson(QJsonDocument::fromJson(sb.json).object());
+            out.append(sb);
+        }
+    }
+    while (m_blockCacheOrder.size() >= kBlockCachePages)
+        m_blockCache.remove(m_blockCacheOrder.takeFirst());
+    m_blockCache.insert(id, out);
+    m_blockCacheOrder.append(id);
+    return out;
+}
+
+QByteArray Workspace::storedJson(const QString &id) const
+{
+    QByteArray json = "[";
+    const QList<StoredBlock> blocks = storedBlocks(id);
+    for (int i = 0; i < blocks.size(); ++i) {
+        if (i)
+            json += ',';
+        json += blocks[i].json;
+    }
+    return json + ']';
+}
+
+void Workspace::writeBlocks(const QString &id, const QList<Block> &stored)
+{
+    const QList<StoredBlock> old = storedBlocks(id);
+    QHash<QString, int> oldIndex;
+    for (int i = 0; i < old.size(); ++i)
+        oldIndex.insert(old[i].id, i);
+    // Every top-level block needs its own id (the row's key).
+    QList<Block> blocks = stored;
+    QSet<QString> seen;
+    for (Block &b : blocks) {
+        if (b.id.isEmpty() || seen.contains(b.id))
+            b.id = Block::newId();
+        seen.insert(b.id);
+    }
+    // Sort keys: blocks that kept their relative order keep their keys (the
+    // longest run of old positions that still increases); new and moved
+    // blocks get keys between their neighbours'.
+    const int n = int(blocks.size());
+    QList<int> oldPos(n, -1);
+    for (int i = 0; i < n; ++i)
+        oldPos[i] = oldIndex.value(blocks[i].id, -1);
+    QList<bool> keeps(n, false);
+    {
+        QList<int> tails, tailAt, prev(n, -1); // patience sorting over old positions
+        for (int i = 0; i < n; ++i) {
+            if (oldPos[i] < 0)
+                continue;
+            const auto it = std::lower_bound(tails.begin(), tails.end(), oldPos[i]);
+            const int len = int(it - tails.begin());
+            if (it == tails.end()) {
+                tails.append(oldPos[i]);
+                tailAt.append(i);
+            } else {
+                *it = oldPos[i];
+                tailAt[len] = i;
+            }
+            prev[i] = len > 0 ? tailAt[len - 1] : -1;
+        }
+        for (int i = tailAt.isEmpty() ? -1 : tailAt.last(); i >= 0; i = prev[i])
+            keeps[i] = true;
+    }
+    QList<double> sorts(n, 0);
+    bool renumber = false;
+    for (int i = 0; i < n && !renumber;) {
+        if (keeps[i]) {
+            sorts[i] = old[oldPos[i]].sort;
+            ++i;
+            continue;
+        }
+        int j = i;
+        while (j < n && !keeps[j])
+            ++j;
+        const int count = j - i;
+        const bool hasLeft = i > 0, hasRight = j < n;
+        const double left = hasLeft ? sorts[i - 1] : 0, right = hasRight ? old[oldPos[j]].sort : 0;
+        for (int k = 0; k < count; ++k) {
+            if (hasLeft && hasRight) {
+                const double step = (right - left) / (count + 1);
+                if (step < 1e-9) {
+                    renumber = true; // the gap is used up: number everything again
+                    break;
+                }
+                sorts[i + k] = left + step * (k + 1);
+            } else if (hasRight) {
+                sorts[i + k] = right - (count - k);
+            } else {
+                sorts[i + k] = (hasLeft ? left : 0) + k + 1;
+            }
+        }
+        i = j;
+    }
+    if (renumber)
+        for (int i = 0; i < n; ++i)
+            sorts[i] = i + 1;
+
+    QSqlQuery insert(m_db), update(m_db), remove(m_db);
+    insert.prepare(QStringLiteral("INSERT INTO blocks(page_id, id, sort, data) VALUES(?,?,?,?)"));
+    update.prepare(QStringLiteral("UPDATE blocks SET sort=?, data=? WHERE page_id=? AND id=?"));
+    remove.prepare(QStringLiteral("DELETE FROM blocks WHERE page_id=? AND id=?"));
+    QList<StoredBlock> now;
+    now.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        StoredBlock sb;
+        sb.id = blocks[i].id;
+        sb.sort = sorts[i];
+        sb.block = blocks[i];
+        const StoredBlock *before = oldPos[i] >= 0 ? &old[oldPos[i]] : nullptr;
+        // Unchanged blocks keep their JSON: only edits are serialized.
+        if (before && before->block == blocks[i]) {
+            sb.json = before->json;
+        } else {
+            sb.json = QJsonDocument(blockToJson(blocks[i])).toJson(QJsonDocument::Compact);
+        }
+        if (!before) {
+            insert.addBindValue(id);
+            insert.addBindValue(sb.id);
+            insert.addBindValue(sb.sort);
+            insert.addBindValue(sb.json);
+            if (!insert.exec())
+                qWarning("Nebula Note: saving a block failed: %s", qPrintable(insert.lastError().text()));
+        } else if (before->sort != sb.sort || before->json != sb.json) {
+            update.addBindValue(sb.sort);
+            update.addBindValue(sb.json);
+            update.addBindValue(id);
+            update.addBindValue(sb.id);
+            if (!update.exec())
+                qWarning("Nebula Note: saving a block failed: %s", qPrintable(update.lastError().text()));
+        }
+        now.append(sb);
+    }
+    for (const StoredBlock &sb : old) {
+        if (seen.contains(sb.id))
+            continue;
+        remove.addBindValue(id);
+        remove.addBindValue(sb.id);
+        remove.exec();
+    }
+    m_blockCacheOrder.removeOne(id);
+    while (m_blockCacheOrder.size() >= kBlockCachePages)
+        m_blockCache.remove(m_blockCacheOrder.takeFirst());
+    m_blockCache.insert(id, now);
+    m_blockCacheOrder.append(id);
+}
+
+void Workspace::dropBlocks(const QString &id)
+{
+    exec(QStringLiteral("DELETE FROM blocks WHERE page_id=?"), {id});
+    exec(QStringLiteral("DELETE FROM synced_refs WHERE page_id=?"), {id});
+    m_blockCache.remove(id);
+    m_blockCacheOrder.removeOne(id);
+}
+
+void Workspace::updateSyncedRefs(const QString &id, const QList<Block> &stored)
+{
+    QSet<QString> refs;
+    forEachBlock(stored, [&](const Block &b) {
+        if (b.type == BlockType::Synced && !b.syncId.isEmpty())
+            refs.insert(b.syncId);
+    });
+    QSet<QString> current;
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("SELECT sync_id FROM synced_refs WHERE page_id=?"));
+    q.addBindValue(id);
+    if (q.exec())
+        while (q.next())
+            current.insert(q.value(0).toString());
+    if (current == refs)
+        return;
+    exec(QStringLiteral("DELETE FROM synced_refs WHERE page_id=?"), {id});
+    for (const QString &ref : refs)
+        exec(QStringLiteral("INSERT OR IGNORE INTO synced_refs(sync_id, page_id) VALUES(?,?)"), {ref, id});
 }
 
 void Workspace::touch(const QString &id)
@@ -646,10 +867,12 @@ void Workspace::setContent(const QString &id, const QList<Block> &blocks, QObjec
         QList<Block> withIds = blocks;
         ensureBlockIds(withIds);
         const QList<Block> stored = collapseSynced(id, withIds);
-        exec(QStringLiteral("UPDATE pages SET content=?, plain=?, updated=? WHERE id=?"),
-             {blocksToJsonString(stored), blocksPlainText(blocks), it->updated, id});
+        writeBlocks(id, stored);
+        exec(QStringLiteral("UPDATE pages SET updated=?, rev=rev+1 WHERE id=?"), {it->updated, id});
+        updateSyncedRefs(id, stored);
         updateLinks(id, blocks);
         updateReminders(id, blocks);
+        markSearchDirty(id);
     });
     emit contentChanged(id, source);
 }
@@ -692,7 +915,7 @@ QList<Block> Workspace::collapseSynced(const QString &pageId, const QList<Block>
                     for (const QString &other : syncedPages(syncId)) {
                         if (other == pageId)
                             continue;
-                        exec(QStringLiteral("UPDATE pages SET plain=? WHERE id=?"), {blocksPlainText(content(other)), other});
+                        markSearchDirty(other);
                         emitLater(QStringLiteral("content:") + other, [this, other] { emit contentChanged(other, this); });
                     }
                 }
@@ -763,11 +986,14 @@ QStringList Workspace::syncedPages(const QString &syncId) const
 {
     QStringList out;
     QSqlQuery q(m_db);
-    q.prepare(QStringLiteral("SELECT id FROM pages WHERE trashed=0 AND content LIKE ?"));
-    q.addBindValue(QStringLiteral("%\"sync\":\"") + syncId + QStringLiteral("\"%"));
+    q.prepare(QStringLiteral("SELECT page_id FROM synced_refs WHERE sync_id=?"));
+    q.addBindValue(syncId);
     if (q.exec())
-        while (q.next())
-            out.append(q.value(0).toString());
+        while (q.next()) {
+            const PageMeta *m = page(q.value(0).toString());
+            if (m && !m->isTrashed())
+                out.append(m->id);
+        }
     return out;
 }
 
@@ -892,12 +1118,14 @@ QList<Workspace::Version> Workspace::versions(const QString &pageId) const
 QList<Block> Workspace::versionContent(qint64 versionId, QString *title) const
 {
     QSqlQuery q(m_db);
-    q.prepare(QStringLiteral("SELECT content, title FROM versions WHERE id=?"));
+    q.prepare(QStringLiteral("SELECT content, title, zip FROM versions WHERE id=?"));
     q.addBindValue(versionId);
     if (q.exec() && q.next()) {
         if (title)
             *title = q.value(1).toString();
-        return expandSynced(blocksFromJsonString(q.value(0).toString()));
+        // Versions are stored compressed (about 4x smaller).
+        const QByteArray json = q.value(2).toInt() ? qUncompress(q.value(0).toByteArray()) : q.value(0).toString().toUtf8();
+        return expandSynced(blocksFromJson(QJsonDocument::fromJson(json).array()));
     }
     return {};
 }
@@ -907,24 +1135,27 @@ bool Workspace::snapshot(const QString &pageId, bool force, int minMinutes)
     const PageMeta *m = page(pageId);
     if (!m || m->isDatabase())
         return false;
+    // Each content change bumps the page's revision: comparing revisions
+    // tells whether anything changed without reading either text.
     QSqlQuery cur(m_db);
-    cur.prepare(QStringLiteral("SELECT content FROM pages WHERE id=?"));
+    cur.prepare(QStringLiteral("SELECT rev FROM pages WHERE id=?"));
     cur.addBindValue(pageId);
     if (!cur.exec() || !cur.next())
         return false;
-    const QString content = cur.value(0).toString();
+    const qint64 rev = cur.value(0).toLongLong();
     QSqlQuery last(m_db);
-    last.prepare(QStringLiteral("SELECT created, content, title FROM versions WHERE page_id=? ORDER BY created DESC, id DESC LIMIT 1"));
+    last.prepare(QStringLiteral("SELECT created, rev, title FROM versions WHERE page_id=? ORDER BY created DESC, id DESC LIMIT 1"));
     last.addBindValue(pageId);
     if (last.exec() && last.next()) {
-        if (last.value(1).toString() == content && last.value(2).toString() == m->title)
+        if (last.value(1).toLongLong() == rev && last.value(2).toString() == m->title)
             return false;
         if (!force && Ids::now() - last.value(0).toLongLong() < qint64(minMinutes) * 60000)
             return false;
-    } else if (content == QLatin1String("[]") && !force) {
+    } else if (storedBlocks(pageId).isEmpty() && !force) {
         return false; // an empty page isn't worth keeping
     }
-    exec(QStringLiteral("INSERT INTO versions(page_id, created, title, content) VALUES(?,?,?,?)"), {pageId, Ids::now(), m->title, content});
+    exec(QStringLiteral("INSERT INTO versions(page_id, created, title, content, rev, zip) VALUES(?,?,?,?,?,1)"),
+         {pageId, Ids::now(), m->title, qCompress(storedJson(pageId), 1), rev}); // fast level: ~4x smaller
     // Keep the newest 120 unnamed versions per page.
     exec(QStringLiteral("DELETE FROM versions WHERE page_id=? AND name='' AND id NOT IN (SELECT id FROM versions WHERE page_id=? "
                         "ORDER BY created DESC, id DESC LIMIT 120)"),
@@ -1078,7 +1309,7 @@ QString Workspace::createTemplate(const QString &databaseId, const QString &titl
     m.title = title.isEmpty() ? tr("New template") : title;
     m.sort = sortAfter(databaseId, {}, true);
     m.created = m.updated = Ids::now();
-    const QString id = insertPage(m, QStringLiteral("[]"), {}, nullptr);
+    const QString id = insertPage(m, {}, {}, nullptr);
     if (!id.isEmpty())
         emitLater([this, databaseId] {
             emit treeChanged();
@@ -1537,8 +1768,9 @@ void Workspace::convertToDatabase(const QString &id, const Schema &schema)
     if (it == m_pages.end() || it->kind != PageKind::Page)
         return;
     it->kind = PageKind::Database;
-    exec(QStringLiteral("UPDATE pages SET kind=?, schema=?, content='[]', plain='' WHERE id=?"),
-         {int(PageKind::Database), toJsonString(schema.toJson()), id});
+    exec(QStringLiteral("UPDATE pages SET kind=?, schema=? WHERE id=?"), {int(PageKind::Database), toJsonString(schema.toJson()), id});
+    dropBlocks(id);
+    markSearchDirty(id);
     m_schemaCache.remove(id);
     touch(id);
     emitLater([this, id] {
@@ -1783,11 +2015,25 @@ void Workspace::deleteForever(const QString &id)
         return;
     batch([&] {
         for (const QString &p : subtree(id, true)) {
+            // Everything the page owns goes with it: deleted means deleted
+            // (its history, comments and search text included).
             exec(QStringLiteral("DELETE FROM pages WHERE id=?"), {p});
-            exec(QStringLiteral("DELETE FROM links WHERE src=?"), {p});
+            exec(QStringLiteral("DELETE FROM links WHERE src=? OR dst=?"), {p, p});
+            exec(QStringLiteral("DELETE FROM versions WHERE page_id=?"), {p});
+            exec(QStringLiteral("DELETE FROM comments WHERE page_id=?"), {p});
+            exec(QStringLiteral("DELETE FROM reminders WHERE page_id=?"), {p});
+            exec(QStringLiteral("DELETE FROM search WHERE rowid IN (SELECT rowid FROM search_map WHERE page_id=?)"), {p});
+            exec(QStringLiteral("DELETE FROM search_map WHERE page_id=?"), {p});
+            dropBlocks(p);
+            // Synced content it started, unless another page still shows it.
+            exec(QStringLiteral("DELETE FROM synced WHERE origin=? AND id NOT IN (SELECT sync_id FROM synced_refs)"), {p});
             m_pages.remove(p);
+            m_propsCache.remove(p);
+            m_schemaCache.remove(p);
+            m_searchDirty.remove(p);
         }
         m_childIndexDirty = true;
+        emitLater(QStringLiteral("reminders"), [this] { emit remindersChanged(); });
         emitLater([this] {
             emit treeChanged();
             emit trashChanged();
@@ -1893,29 +2139,71 @@ QList<Workspace::SearchHit> Workspace::search(const QString &query, const Search
             seen.insert(m.id);
         }
     }
+    // Page text: the full-text index (FTS5 trigrams find any part of a
+    // word, like the old scan did, without reading every page). Terms of
+    // one or two letters can't use trigrams and are matched as plain text.
+    flushSearch();
+    const QStringList terms = q.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+    QStringList phrases, likes;
+    QVariantList args;
+    for (const QString &t : terms) {
+        const bool indexed = m_tokenizer == QLatin1String("trigram") ? t.size() >= 3 : !m_tokenizer.isEmpty();
+        if (indexed) {
+            QString quoted = t;
+            quoted.replace(QLatin1Char('"'), QStringLiteral("\"\""));
+            phrases.append(QLatin1Char('"') + quoted + QLatin1Char('"') + (m_tokenizer == QLatin1String("unicode61") ? QStringLiteral("*") : QString()));
+        } else {
+            likes.append(QStringLiteral("s.body LIKE ? ESCAPE '\\'"));
+        }
+    }
+    QString where;
+    if (!phrases.isEmpty())
+        where = QStringLiteral("search MATCH ?");
+    for (const QString &l : likes)
+        where += (where.isEmpty() ? QString() : QStringLiteral(" AND ")) + l;
+    if (!phrases.isEmpty())
+        args.append(QStringLiteral("body : ") + phrases.join(QStringLiteral(" AND body : ")));
+    for (const QString &t : terms) {
+        const bool indexed = m_tokenizer == QLatin1String("trigram") ? t.size() >= 3 : !m_tokenizer.isEmpty();
+        if (!indexed)
+            args.append(QLatin1Char('%') + escapeLike(t) + QLatin1Char('%'));
+    }
+    // Ranking (bm25) costs time for every match: rank when there are a few
+    // thousand at most; a word on every page just lists the first ones.
+    bool ranked = false;
+    if (!phrases.isEmpty()) {
+        QSqlQuery count(m_db);
+        count.prepare(QStringLiteral("SELECT COUNT(*) FROM (SELECT 1 FROM search WHERE search MATCH ? LIMIT 2001)"));
+        count.addBindValue(args.first());
+        ranked = count.exec() && count.next() && count.value(0).toInt() <= 2000;
+    }
     QSqlQuery sql(m_db);
-    sql.prepare(QStringLiteral("SELECT id, plain FROM pages WHERE trashed=0 AND plain LIKE ? ESCAPE '\\' LIMIT 400"));
-    sql.addBindValue(QLatin1Char('%') + escapeLike(q) + QLatin1Char('%'));
-    if (sql.exec()) {
+    sql.setForwardOnly(true);
+    sql.prepare(QStringLiteral("SELECT m.page_id, s.body FROM search s JOIN search_map m ON m.rowid = s.rowid WHERE %1 %2 LIMIT 400")
+                    .arg(where, ranked ? QStringLiteral("ORDER BY s.rank") : QString()));
+    for (const QVariant &a : args)
+        sql.addBindValue(a);
+    if (!where.isEmpty() && sql.exec()) {
+        int position = 0;
         while (sql.next()) {
             const QString id = sql.value(0).toString();
             const PageMeta *pm = page(id);
             if (!pm || !allowed(*pm))
                 continue;
             const QString plain = sql.value(1).toString();
-            const int idx = plain.indexOf(q, 0, Qt::CaseInsensitive);
-            if (idx < 0)
-                continue;
-            // A snippet of the line around the match.
-            int start = plain.lastIndexOf(QLatin1Char('\n'), idx);
+            // A snippet of the line around the first term (diacritics may
+            // have matched where indexOf can't: then the page's start).
+            int idx = plain.indexOf(terms.first(), 0, Qt::CaseInsensitive);
+            const int at = qMax(0, idx);
+            int start = plain.lastIndexOf(QLatin1Char('\n'), at);
             start = start < 0 ? 0 : start + 1;
-            int end = plain.indexOf(QLatin1Char('\n'), idx);
+            int end = plain.indexOf(QLatin1Char('\n'), at);
             if (end < 0)
                 end = int(plain.size());
-            if (idx - start > 40)
-                start = idx - 40;
-            if (end - idx > 80)
-                end = idx + 80;
+            if (at - start > 40)
+                start = at - 40;
+            if (end - at > 80)
+                end = at + 80;
             QString snippet = plain.mid(start, end - start).simplified();
             if (seen.contains(id)) {
                 for (SearchHit &h : hits)
@@ -1923,8 +2211,9 @@ QList<Workspace::SearchHit> Workspace::search(const QString &query, const Search
                         h.snippet = snippet;
                 continue;
             }
+            // Best-ranked first (bm25), then by where in the text it matched.
             if (!options.titleOnly)
-                hits.append({id, snippet, 200 - qMin(idx, 150), false});
+                hits.append({id, snippet, 200 - qMin(position++, 100) - qMin(qMax(idx, 0), 50) / 10, false});
         }
     }
     std::sort(hits.begin(), hits.end(), [this, &options](const SearchHit &a, const SearchHit &b) {
@@ -1994,6 +2283,75 @@ QString Workspace::mediaPath(const QString &fileName) const
 }
 
 // ---- maintenance ---------------------------------------------------------------
+
+void Workspace::markSearchDirty(const QString &id)
+{
+    m_searchDirty.insert(id);
+    m_searchTimer->start();
+}
+
+void Workspace::flushSearch() const
+{
+    if (m_searchDirty.isEmpty() || !m_db.isOpen())
+        return;
+    m_searchTimer->stop();
+    const QSet<QString> ids = std::exchange(m_searchDirty, {});
+    auto *self = const_cast<Workspace *>(this);
+    const bool own = m_batchDepth == 0 && self->m_db.transaction();
+    QSqlQuery find(m_db), map(m_db), drop(m_db), add(m_db), unmap(m_db);
+    find.prepare(QStringLiteral("SELECT rowid FROM search_map WHERE page_id=?"));
+    map.prepare(QStringLiteral("INSERT INTO search_map(page_id) VALUES(?)"));
+    drop.prepare(QStringLiteral("DELETE FROM search WHERE rowid=?"));
+    add.prepare(QStringLiteral("INSERT INTO search(rowid, body) VALUES(?, ?)"));
+    unmap.prepare(QStringLiteral("DELETE FROM search_map WHERE page_id=?"));
+    for (const QString &id : ids) {
+        qint64 rowid = -1;
+        find.addBindValue(id);
+        if (find.exec() && find.next())
+            rowid = find.value(0).toLongLong();
+        find.finish();
+        const PageMeta *m = page(id);
+        if (!m) {
+            if (rowid >= 0) {
+                drop.addBindValue(rowid);
+                drop.exec();
+                unmap.addBindValue(id);
+                unmap.exec();
+            }
+            continue;
+        }
+        if (rowid < 0) {
+            map.addBindValue(id);
+            if (!map.exec())
+                continue;
+            rowid = map.lastInsertId().toLongLong();
+        } else {
+            drop.addBindValue(rowid);
+            drop.exec();
+        }
+        add.addBindValue(rowid);
+        add.addBindValue(m->isDatabase() ? QString() : blocksPlainText(content(id)));
+        add.exec();
+    }
+    if (own)
+        self->m_db.commit();
+}
+
+void Workspace::cleanUp()
+{
+    batch([&] {
+        const QString gone = QStringLiteral(" NOT IN (SELECT id FROM pages)");
+        exec(QStringLiteral("DELETE FROM blocks WHERE page_id") + gone);
+        exec(QStringLiteral("DELETE FROM versions WHERE page_id") + gone);
+        exec(QStringLiteral("DELETE FROM comments WHERE page_id") + gone);
+        exec(QStringLiteral("DELETE FROM reminders WHERE page_id") + gone);
+        exec(QStringLiteral("DELETE FROM links WHERE src") + gone + QStringLiteral(" OR dst") + gone);
+        exec(QStringLiteral("DELETE FROM synced_refs WHERE page_id") + gone);
+        exec(QStringLiteral("DELETE FROM search WHERE rowid IN (SELECT rowid FROM search_map WHERE page_id") + gone + QLatin1Char(')'));
+        exec(QStringLiteral("DELETE FROM search_map WHERE page_id") + gone);
+        exec(QStringLiteral("DELETE FROM synced WHERE origin") + gone + QStringLiteral(" AND id NOT IN (SELECT sync_id FROM synced_refs)"));
+    });
+}
 
 QString Workspace::backup(bool force, int keep)
 {

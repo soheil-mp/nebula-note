@@ -3,6 +3,7 @@
 #include "core/Workspace.h"
 #include "ui/Widgets.h"
 
+#include <QPixmap>
 #include <QVariantAnimation>
 #include <QWidget>
 
@@ -33,6 +34,7 @@ protected:
     int m_top;
     QWidget *m_card;
     QVariantAnimation m_fade;
+    QPixmap m_backdrop; // the window behind, while fading in
 };
 
 // Ctrl+P: jump to any page or run an action.

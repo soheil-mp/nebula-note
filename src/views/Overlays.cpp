@@ -52,6 +52,12 @@ ModalOverlay::ModalOverlay(QWidget *host, const QSize &cardSize, int topOffset)
         relayout();
         update();
     });
+    connect(&m_fade, &QVariantAnimation::finished, this, [this] {
+        // Faded in: the window behind may change again (settings apply live).
+        m_backdrop = QPixmap();
+        setAttribute(Qt::WA_OpaquePaintEvent, false);
+        update();
+    });
     hide();
 }
 
@@ -68,6 +74,11 @@ void ModalOverlay::relayout()
 void ModalOverlay::open()
 {
     relayout();
+    // While the card fades in, the window behind it stays as it is: paint a
+    // snapshot of it rather than repainting it (a big board, a long page)
+    // on every frame of the animation.
+    m_backdrop = parentWidget()->grab();
+    setAttribute(Qt::WA_OpaquePaintEvent, !m_backdrop.isNull());
     show();
     raise();
     setFocus();
@@ -93,6 +104,12 @@ void ModalOverlay::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     const double t = m_fade.state() == QAbstractAnimation::Running ? m_fade.currentValue().toDouble() : 1.0;
+    if (!m_backdrop.isNull()) {
+        // Exactly what was there, transparent corners included.
+        p.setCompositionMode(QPainter::CompositionMode_Source);
+        p.drawPixmap(rect(), m_backdrop);
+        p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    }
     // Round the dim layer to the window's corners.
     QPainterPath frame;
     const bool max = window()->isMaximized() || window()->isFullScreen();
