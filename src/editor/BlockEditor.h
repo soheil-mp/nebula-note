@@ -388,6 +388,8 @@ private:
     QHash<QString, int> m_openComments; // block id → open threads anchored there
     // Inline databases and linked views: live widgets over their blocks.
     QHash<QString, QPointer<DatabaseBody>> m_embeds;
+    QHash<QString, QPointer<QWidget>> m_players; // video embeds playing in place (by block id)
+    QSet<QString> m_playing;
     QTimer m_embedTimer;
     int m_commentFrom = -1;
     int m_commentTo = -1;

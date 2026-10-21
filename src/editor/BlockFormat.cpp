@@ -151,7 +151,8 @@ double spaceAbove(BlockType t, const Style &s)
     case BlockType::Table:
         return 10 * k;
     case BlockType::Divider:
-        return 8 * k;
+        // The rule sits close under the text above it, as in Notion.
+        return 2 * k;
     default:
         // Text, lists, to-dos: Notion's 3px padding above and below plus 1px.
         return 7 * k;

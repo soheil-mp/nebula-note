@@ -17,6 +17,7 @@
 #include "views/TopBar.h"
 #include "views/Overlays.h"
 #include "views/PageHeader.h"
+#include "views/PageMenu.h"
 #include "views/PageView.h"
 
 #include <QApplication>
@@ -317,6 +318,42 @@ private slots:
         settle(80);
         QCOMPARE(title->font().family(), Theme::displayFamily());
         QVERIFY(qAbs(page->verticalScrollBar()->value() - before) <= 2);
+    }
+
+    void pageMenuStylesApplyLive()
+    {
+        const QString id = m_ws->createPage({}, QStringLiteral("Styled"), {Block::make(BlockType::Paragraph, QStringLiteral("Body"))});
+        m_win->navigate(id);
+        settle(50);
+        m_win->showPageMenu(id, m_win->mapToGlobal(QPoint(1200, 40)), false);
+        settle(50);
+        PageMenu *menu = nullptr;
+        for (QWidget *w : QApplication::topLevelWidgets())
+            if (auto *m = qobject_cast<PageMenu *>(w); m && m->isVisible())
+                menu = m;
+        QVERIFY(menu);
+        // Width and text size flip both ways, as often as you like, with the menu open.
+        auto segments = menu->findChildren<Segmented *>();
+        QCOMPARE(segments.size(), 2);
+        Segmented *width = segments[1];
+        auto clickSegment = [](Segmented *s, int i) {
+            const int w = s->width() / 2;
+            QTest::mouseClick(s, Qt::LeftButton, {}, QPoint(i * w + w / 2, s->height() / 2));
+        };
+        for (int round = 0; round < 2; ++round) {
+            clickSegment(width, 1);
+            settle(20);
+            QVERIFY(m_ws->options(id).fullWidth);
+            clickSegment(width, 0);
+            settle(20);
+            QVERIFY(!m_ws->options(id).fullWidth);
+        }
+        clickSegment(segments[0], 1);
+        settle(20);
+        QVERIFY(m_ws->options(id).smallText);
+        QVERIFY(menu->isVisible());
+        menu->close();
+        settle(20);
     }
 
     void remindersAnnounceThemselves()

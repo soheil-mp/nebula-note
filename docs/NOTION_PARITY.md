@@ -44,7 +44,7 @@ screenshots instead.
 | Image | upload/paste/drop, caption, resize, align, full width, full screen, replace, download | ✅ |
 | Video / Audio / File / PDF | upload or link, caption | ◐ shown as cards that open in the system player/viewer (no inline playback) |
 | Web bookmark | link preview card | ✅ title/description fetched when online |
-| Embeds (YouTube, Figma…) | iframe embeds | ◐ shown as bookmark cards (no web engine) |
+| Embeds (YouTube, Figma…) | iframe embeds | ✅ YouTube and Vimeo play in the page (Qt WebEngine; a thumbnail that opens the browser without it), pasting a video link embeds it; other sites show as cards |
 | Inline database / linked view | `/table view`…, `/linked view of database` | ✅ live databases inside pages; linked views keep their own views |
 | Template button (legacy) | insert template | ✅ (a button that inserts blocks) |
 | Tabs block, meeting notes, AI blocks | | ✗ |
@@ -106,11 +106,11 @@ screenshots instead.
 |---|---|
 | Sidebar: favourites, page tree, drag to nest, database views listed, trash | ✅ |
 | Search: title only, in page, edited/created date filters, sort by best match / edited / created | ✅ |
-| Home: recents, upcoming | ✅ |
-| Inbox: reminders and comment activity; reminder notifications | ✅ (desktop notifications via `notify-send` when available) |
+| Home: recents, upcoming, a month calendar | ✅ |
+| Inbox | ➖ left out on purpose; reminders still notify (desktop notifications via `notify-send` when available) |
 | Tabs (Ctrl+T, Ctrl+W, Ctrl+Tab), new window (Ctrl+Shift+N) | ✅ |
 | Import: Notion export (Markdown & CSV, HTML), Markdown, CSV, HTML, Word (.docx), Evernote (.enex) | ✅ attachments (images, PDFs, files) are copied into the workspace and web images (covers, icons, linked pictures) downloaded; inline databases come back live (Word: no comments, footnotes or tracked changes) |
-| Templates gallery | ✅ |
+| Templates gallery | ➖ left out on purpose (database row templates remain) |
 | Light/dark mode | ✗ by design (the look is space gray) |
 | Offline, desktop app | ✅ it only ever works locally |
 | Sync across devices, mobile apps, web app | ✗ |

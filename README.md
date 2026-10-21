@@ -24,7 +24,8 @@ moonrises…), and Notion's colors become gray **shades**.
 | ![Columns and a simple table](docs/screenshots/columns.png) | ![Equations, table of contents, breadcrumb](docs/screenshots/blocks.png) |
 | ![Version history](docs/screenshots/history.png) | ![Quick Find with filters](docs/screenshots/quickfind.png) |
 | ![Tabs](docs/screenshots/tabs.png) | ![Views in the sidebar](docs/screenshots/sidebar-views.png) |
-| ![Commands](docs/screenshots/slash.png) | ![Templates](docs/screenshots/templates.png) |
+| ![Commands](docs/screenshots/slash.png) | ![A YouTube video embedded in a page](docs/screenshots/video.png) |
+| ![Home with the month calendar](docs/screenshots/home.png) | ![The page menu: fonts, text size, width](docs/screenshots/page-menu.png) |
 
 ## Install
 
@@ -42,6 +43,10 @@ entry; your workspace stays where it was.
 Build dependencies on Ubuntu/Debian:
 `cmake ninja-build g++ qt6-base-dev qt6-svg-dev zlib1g-dev` and optionally
 `libkf6windowsystem-dev` for native KWin shadows and blur behind the sidebar.
+YouTube and Vimeo videos play inside pages with Qt WebEngine
+(`qt6-webengine-dev`); when only its libraries are installed, `install.sh`
+fetches the headers into `~/.cache/nebula-note` (no root needed). Without
+WebEngine, video embeds show their thumbnail and open in the browser.
 Spell check uses Hunspell dictionaries when they are installed (`hunspell-en-us`).
 
 ## Writing
@@ -52,7 +57,8 @@ Spell check uses Hunspell dictionaries when they are installed (`hunspell-en-us`
   flowcharts** drawn in place, **block and inline equations** (a built-in TeX
   typesetter: fractions, roots, scripts, big operators, matrices, cases, accents,
   Greek and the usual symbols), dividers, images (caption, resize, align, full
-  width, full screen), video/audio/file/PDF cards, web bookmarks with previews,
+  width, full screen), **YouTube and Vimeo embeds** that play in the page (paste
+  the link), video/audio/file/PDF cards, web bookmarks with previews,
   buttons, synced blocks, table of contents, breadcrumb, links to pages and
   inline databases.
 - **Columns**: drag a block to the left or right edge of another, or type
@@ -71,12 +77,15 @@ Spell check uses Hunspell dictionaries when they are installed (`hunspell-en-us`
   threads, resolve and reopen. **Spell check** with suggestions (it can be
   turned off in Settings).
 - **Pages**: icons (glyphs, emoji or your image), covers (generated scenes or
-  your image), Default/Serif/Mono, small text, full width, lock, a table of
-  contents in the margin, backlinks (expanded, in a popover or off), find in
+  your image); a ••• menu like Notion's with the font as Default/Serif/Mono
+  tiles, text size and page width as two-way switches that apply live, lock,
+  an outline of the top-level headings in the margin, backlinks (listed, as a
+  count or off), find in
   page and **version history** (a version every ten minutes of editing:
   preview, name, restore).
 - **Paste** keeps structure: Markdown, rich text, images, `nebula://` links to
-  pages and blocks; pasting a URL offers a link, bookmark or mention.
+  pages and blocks; pasting a URL offers a link, bookmark or embed, and a video
+  link embeds the video right away.
 
 ## Databases
 
@@ -102,7 +111,7 @@ Spell check uses Hunspell dictionaries when they are installed (`hunspell-en-us`
   Sorts, search, grouping (by date bucket, alphabet, number range…) with
   hidden and empty groups, and per-view layout options.
 - **Sub-items** (nested in toggles, flattened, parents only) and
-  **dependencies**; **templates** (default template, preset properties and
+  **dependencies**; row **templates** (default template, preset properties and
   content) behind the New ▾ button; **lock database**.
 - Rows open in a **side peek**, **center peek** or as a full page. Databases can
   live **inline** in a page, and **linked views** show a database elsewhere with
@@ -110,13 +119,13 @@ Spell check uses Hunspell dictionaries when they are installed (`hunspell-en-us`
 
 ## Finding your way
 
-- **Sidebar** with Favorites, Inbox and the page tree (drag to reorder or nest;
+- **Sidebar** with Favorites and the page tree (drag to reorder or nest;
   databases list their views).
 - **Quick Find** (Ctrl+P / Ctrl+K): fuzzy titles and page text, with Notion's
   filters — title only, in a page, edited/created date — and sorts.
-- **Inbox**: due and upcoming reminders and recent comments; reminders also pop
-  up as notifications when they come due.
-- **Home**: recent pages, quick starts and everything dated in the next two weeks.
+- **Reminders** (`@remind friday 9am`) pop up as notifications when they come due.
+- **Home**: recent pages, quick starts, everything dated in the next two weeks
+  and a month calendar marking the days that have something on them.
 - **Tabs** (Ctrl+T, Ctrl+W, Ctrl+Tab) and **new windows** (Ctrl+Shift+N); back
   and forward, breadcrumbs, Ctrl+Shift+U for the parent page.
 
@@ -187,8 +196,8 @@ Seven suites run offscreen:
   columns, board drags across groups and lanes, calendar ranges, timeline
   resizing, charts, forms, the filter builder, settings, linked views, load
   more, inline databases in pages and the row peek.
-- `nebula_app_tests`: the real window — every page and view, templates, trash,
-  overlays, version history, page customisation, the inbox, search filters,
+- `nebula_app_tests`: the real window — every page and view, trash, overlays,
+  version history, the page menu and customisation, reminders, search filters,
   views in the sidebar, tabs, new windows, saving on close.
 
 `docs/NOTION_PARITY.md` lists Notion's features one by one and how Nebula Note
@@ -197,4 +206,6 @@ covers them; `docs/RESEARCH.md` describes the research and design decisions.
 ## Licence notes
 
 Inter is bundled under the SIL Open Font License (`resources/fonts/OFL-Inter.txt`).
+The video in the embed screenshot is *Big Buck Bunny* (© Blender Foundation,
+CC BY 3.0).
 Icons and cover art are drawn by Nebula Note itself.

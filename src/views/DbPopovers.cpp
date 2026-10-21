@@ -42,61 +42,6 @@ QComboBox *combo(int minWidth = 0)
     return c;
 }
 
-// A settings menu row: icon and label on the left, the current value in gray
-// on the right, and a chevron when it opens a page of its own.
-class MenuRow : public QAbstractButton
-{
-public:
-    MenuRow(const QString &icon, const QString &label, const QString &value, bool chevron)
-        : m_icon(icon)
-        , m_value(value)
-        , m_chevron(chevron)
-    {
-        setText(label);
-        setCursor(Qt::PointingHandCursor);
-        setAttribute(Qt::WA_Hover);
-        setMinimumWidth(300);
-    }
-    QSize sizeHint() const override { return {300, 30}; }
-
-protected:
-    void paintEvent(QPaintEvent *) override
-    {
-        const auto &c = Theme::colors();
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
-        const bool hot = underMouse() && isEnabled();
-        if (hot)
-            Theme::paintHover(p, QRectF(rect()), 1.0, 6);
-        const double textX = m_icon.isEmpty() ? 8 : 34;
-        if (!m_icon.isEmpty())
-            Icons::paint(p, QRectF(8, height() / 2.0 - 8, 16, 16), m_icon, hot ? c.starlight : c.mist);
-        double right = width() - 8;
-        if (m_chevron) {
-            Icons::paint(p, QRectF(right - 13, height() / 2.0 - 6.5, 13, 13), QStringLiteral("chevron-right"), c.fog);
-            right -= 19;
-        }
-        p.setFont(Theme::uiFont(13.5));
-        const QFontMetricsF fm(p.font());
-        double valueW = 0;
-        if (!m_value.isEmpty()) {
-            valueW = qMin(fm.horizontalAdvance(m_value), (right - textX) * 0.5);
-            p.setPen(c.fog);
-            p.drawText(QRectF(right - valueW, 0, valueW, height()), Qt::AlignVCenter | Qt::AlignRight,
-                       fm.elidedText(m_value, Qt::ElideRight, valueW));
-            valueW += 12;
-        }
-        p.setPen(isEnabled() ? (hot ? c.starlight : c.moon) : c.dust);
-        p.drawText(QRectF(textX, 0, right - valueW - textX, height()), Qt::AlignVCenter,
-                   fm.elidedText(text(), Qt::ElideRight, right - valueW - textX));
-    }
-
-private:
-    QString m_icon;
-    QString m_value;
-    bool m_chevron;
-};
-
 QLabel *caption(const QString &text)
 {
     auto *l = new QLabel(text);
@@ -697,6 +642,7 @@ private:
     MenuRow *row(const QString &icon, const QString &label, const QString &value, std::function<void()> fn, bool chevron = false)
     {
         auto *b = new MenuRow(icon, label, value, chevron);
+        b->setMinimumWidth(300);
         b->setObjectName(QStringLiteral("settingsRow"));
         QObject::connect(b, &MenuRow::clicked, this, std::move(fn));
         m_layout->addWidget(b);
@@ -710,6 +656,7 @@ private:
     Switch *toggle(const QString &icon, const QString &label, bool on, std::function<void(bool)> fn)
     {
         auto *r = new MenuRow(icon, label, QString(), false);
+        r->setMinimumWidth(300);
         auto *sw = new Switch(r);
         sw->setChecked(on);
         auto *h = new QHBoxLayout(r);

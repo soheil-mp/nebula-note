@@ -159,6 +159,10 @@ BlockEditor::BlockEditor(QWidget *parent)
     connect(document(), &QTextDocument::contentsChanged, this, &BlockEditor::scheduleEmbeds);
     connect(this, &QTextEdit::cursorPositionChanged, this, [this] {
         fixCursorVisibility();
+        // No caret beside an image, embed or other object: it would be as tall
+        // as the object.
+        if (m_blockSel.first < 0)
+            setCursorWidth(blockTypeIsAtomic(typeOf(textCursor().block())) ? 0 : 2);
         if (m_slash && m_slash->isVisible())
             updateSlashMenu();
         if (m_mention && (m_mention->isVisible() || m_mentionPos >= 0))

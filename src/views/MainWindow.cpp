@@ -4,6 +4,7 @@
 #include "History.h"
 #include "HomeView.h"
 #include "Overlays.h"
+#include "PageMenu.h"
 #include "PageView.h"
 #include "Peek.h"
 #include "Pickers.h"
@@ -774,80 +775,38 @@ void MainWindow::showPageMenu(const QString &pageId, const QPoint &globalPos, bo
     const PageMeta *m = ws->page(pageId);
     if (!m)
         return;
-    QMenu *menu = Theme::makeMenu(this);
     if (!fromSidebar && !m->isDatabase()) {
-        // Page style, Notion's ••• menu.
-        const PageOptions o = ws->options(pageId);
-        Theme::addMenuSection(menu, tr("Style"));
-        const QList<QPair<QString, QString>> fonts = {{QStringLiteral("sans"), tr("Default")}, {QStringLiteral("serif"), tr("Serif")},
-                                                      {QStringLiteral("mono"), tr("Mono")}};
-        for (const auto &[key, name] : fonts) {
-            QAction *a = menu->addAction(Icons::icon(QStringLiteral("font")), name);
-            a->setCheckable(true);
-            a->setChecked(o.font == key);
-            connect(a, &QAction::triggered, this, [pageId, key = key] {
-                PageOptions po = Workspace::instance()->options(pageId);
-                po.font = key;
-                Workspace::instance()->setOptions(pageId, po);
-            });
-        }
-        QAction *small = menu->addAction(Icons::icon(QStringLiteral("textsize")), tr("Small text"));
-        small->setCheckable(true);
-        small->setChecked(o.smallText);
-        connect(small, &QAction::toggled, this, [pageId](bool on) {
-            PageOptions po = Workspace::instance()->options(pageId);
-            po.smallText = on;
-            Workspace::instance()->setOptions(pageId, po);
+        // Notion's ••• menu: style that applies live, then the page's actions.
+        auto *pm = new PageMenu(this, pageId);
+        connect(pm, &PageMenu::action, this, [this, pageId, globalPos](const QString &a) {
+            Workspace *ws = Workspace::instance();
+            if (a == QLatin1String("favorite"))
+                ws->setFavorite(pageId, !(ws->page(pageId) && ws->page(pageId)->favorite > 0));
+            else if (a == QLatin1String("duplicate")) {
+                flushAll();
+                const QString copy = ws->duplicate(pageId);
+                if (!copy.isEmpty())
+                    navigate(copy);
+            } else if (a == QLatin1String("move"))
+                movePage(pageId, globalPos - QPoint(300, 0));
+            else if (a == QLatin1String("copytitle"))
+                QApplication::clipboard()->setText(ws->title(pageId));
+            else if (a == QLatin1String("history"))
+                openVersionHistory(pageId);
+            else if (a == QLatin1String("import"))
+                importFiles(pageId);
+            else if (a == QLatin1String("trash"))
+                trashPage(pageId);
+            else if (a.startsWith(QLatin1String("export:")))
+                exportPage(pageId, a.mid(7));
         });
-        QAction *wide = menu->addAction(Icons::icon(QStringLiteral("width")), tr("Full width"));
-        wide->setCheckable(true);
-        wide->setChecked(o.fullWidth);
-        connect(wide, &QAction::toggled, this, [pageId](bool on) {
-            PageOptions po = Workspace::instance()->options(pageId);
-            po.fullWidth = on;
-            Workspace::instance()->setOptions(pageId, po);
-        });
-        QAction *lock = menu->addAction(Icons::icon(o.locked ? QStringLiteral("lock") : QStringLiteral("unlock")), tr("Lock page"));
-        lock->setCheckable(true);
-        lock->setChecked(o.locked);
-        connect(lock, &QAction::toggled, this, [pageId](bool on) {
-            PageOptions po = Workspace::instance()->options(pageId);
-            po.locked = on;
-            Workspace::instance()->setOptions(pageId, po);
-        });
-        // Customize page: what shows around the content.
-        QMenu *custom = menu->addMenu(Icons::icon(QStringLiteral("settings")), tr("Customize page"));
-        Theme::polishMenu(custom);
-        auto option = [&](const QString &text, bool on, std::function<void(PageOptions &, bool)> set) {
-            QAction *a = custom->addAction(text);
-            a->setCheckable(true);
-            a->setChecked(on);
-            connect(a, &QAction::toggled, this, [pageId, set](bool v) {
-                PageOptions po = Workspace::instance()->options(pageId);
-                set(po, v);
-                Workspace::instance()->setOptions(pageId, po);
-            });
-        };
-        option(tr("Table of contents in the margin"), o.showToc, [](PageOptions &po, bool v) { po.showToc = v; });
-        option(tr("Page discussions"), o.showDiscussion, [](PageOptions &po, bool v) { po.showDiscussion = v; });
-        Theme::addMenuSection(custom, tr("Backlinks"));
-        for (const auto &[key, name] : QList<QPair<QString, QString>>{{QStringLiteral("expanded"), tr("Show expanded")},
-                                                                      {QStringLiteral("popover"), tr("Show in popover")},
-                                                                      {QStringLiteral("off"), tr("Off")}}) {
-            QAction *a = custom->addAction(name);
-            a->setCheckable(true);
-            a->setChecked(o.backlinks == key);
-            connect(a, &QAction::triggered, this, [pageId, key = key] {
-                PageOptions po = Workspace::instance()->options(pageId);
-                po.backlinks = key;
-                Workspace::instance()->setOptions(pageId, po);
-            });
-        }
-        menu->addAction(Icons::icon(QStringLiteral("history")), tr("Version history"), this, [this, pageId] { openVersionHistory(pageId); });
-        menu->addSeparator();
-    } else {
-        Theme::addMenuSection(menu, ws->title(pageId));
+        pm->adjustSize();
+        // Hangs from the right edge of its button.
+        pm->popupAt(globalPos - QPoint(pm->width() - 2 * Popover::kShadow, 0));
+        return;
     }
+    QMenu *menu = Theme::makeMenu(this);
+    Theme::addMenuSection(menu, ws->title(pageId));
     if (fromSidebar) {
         menu->addAction(Icons::icon(QStringLiteral("external")), tr("Open"), this, [this, pageId] { navigate(pageId); });
         menu->addAction(Icons::icon(QStringLiteral("tab-new")), tr("Open in new tab"), this, [this, pageId] { newTab(pageId); });

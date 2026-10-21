@@ -10,7 +10,9 @@
 #include "Popups.h"
 #include "core/DateParse.h"
 #include "core/Markdown.h"
+#include "core/MediaLinks.h"
 #include "core/Workspace.h"
+#include "ui/WebPlayer.h"
 #include "ui/DatePopover.h"
 #include "ui/Theme.h"
 
@@ -544,7 +546,11 @@ void BlockEditor::activateObject(const QTextBlock &block, int part, const QPoint
     case BlockType::Embed:
         if (b.url.isEmpty())
             askForLink(block.blockNumber(), globalPos);
-        else
+        else if (b.type == BlockType::Embed && MediaLinks::isVideoLink(b.url) && WebPlayer::available()) {
+            // Play right here.
+            m_playing.insert(idOf(block));
+            scheduleEmbeds();
+        } else
             QDesktopServices::openUrl(QUrl(b.url));
         break;
     case BlockType::Video:
@@ -679,6 +685,13 @@ void BlockEditor::runPasteChoice(const QString &id)
     c.beginEditBlock();
     setBlockProps(blk, b);
     c.endEditBlock();
+    // Writing goes on below the card, as in Notion.
+    const QTextBlock card = blockById(b.id);
+    if (card.isValid()) {
+        Block next;
+        next.depth = b.depth;
+        insertNewBlockAfter(card, next);
+    }
     scheduleNormalize();
     fetchPreview(b.id, url);
 }

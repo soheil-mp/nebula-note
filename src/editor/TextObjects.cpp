@@ -1,6 +1,9 @@
 #include "TextObjects.h"
 
+#include "LinkPreview.h"
+
 #include "core/DateParse.h"
+#include "core/MediaLinks.h"
 #include "core/Workspace.h"
 #include "ui/Icons.h"
 #include "ui/Tex.h"
@@ -14,6 +17,7 @@
 #include <QFontMetricsF>
 #include <QHash>
 #include <QImageReader>
+#include <QPixmapCache>
 
 #include "ui/AnimatedMedia.h"
 #include <QPainter>
@@ -21,6 +25,8 @@
 #include <QTextBlock>
 #include <QTextDocument>
 #include <QTextFrame>
+
+#include <cmath>
 
 using namespace BlockFormat;
 
@@ -113,6 +119,12 @@ double TextObjects::tocRowHeight(const Style &style)
 double TextObjects::tocTop(const Style &style)
 {
     return 4 * style.size / 16.0;
+}
+
+QRectF TextObjects::videoFrame(const QRectF &objectRect)
+{
+    const double w = qMin(objectRect.width(), 860.0);
+    return QRectF(objectRect.left(), objectRect.top() + 2, w, std::round(w * 9.0 / 16.0));
 }
 
 double TextObjects::captionHeight(const Style &style)
@@ -227,7 +239,7 @@ QSizeF TextObjects::intrinsicSize(QTextDocument *doc, int pos, const QTextFormat
     const Style &s = m_ctx->style;
     switch (format.objectType()) {
     case DividerObject:
-        return QSizeF(availableWidth(doc, pos), s.size * 1.35);
+        return QSizeF(availableWidth(doc, pos), s.size * 1.0);
     case PageLinkObject:
         // About a text line tall, so a run of links keeps the page's rhythm.
         return QSizeF(availableWidth(doc, pos), s.size * 1.65);
@@ -300,6 +312,8 @@ QSizeF TextObjects::intrinsicSize(QTextDocument *doc, int pos, const QTextFormat
             return QSizeF(avail, (desc ? 104 : 72) * k + cap);
         }
         case BlockType::Embed:
+            if (MediaLinks::isVideoLink(b.url))
+                return QSizeF(avail, videoFrame(QRectF(0, 0, avail, 0)).height() + 4 + cap);
             return QSizeF(avail, 72 * k + cap);
         case BlockType::Video:
         case BlockType::Audio:
@@ -631,8 +645,76 @@ void TextObjects::drawObject(QPainter *p, const QRectF &rect, QTextDocument *doc
             p->drawText(br.adjusted(36 * k, 0, -12 * k, 0), Qt::AlignLeft | Qt::AlignVCenter, label);
             break;
         }
-        case BlockType::Bookmark:
-        case BlockType::Embed: {
+        case BlockType::Embed:
+            if (MediaLinks::isVideoLink(b.url)) {
+                // A video: its thumbnail in a 16:9 frame with a play button
+                // (it plays in place, or in the browser without WebEngine).
+                const QRectF fr = videoFrame(body);
+                QPainterPath clip;
+                clip.addRoundedRect(fr, 10 * k, 10 * k);
+                p->save();
+                p->setClipPath(clip);
+                p->fillRect(fr, QColor(0x0C, 0x0C, 0x0F));
+                const QString image = b.data.value(QStringLiteral("image")).toString();
+                Workspace *ws = Workspace::instance();
+                if (!image.isEmpty() && ws) {
+                    const QSize px = (fr.size() * p->device()->devicePixelRatioF()).toSize();
+                    const QString key = QStringLiteral("video|%1|%2x%3").arg(image).arg(px.width()).arg(px.height());
+                    QPixmap pm;
+                    if (!QPixmapCache::find(key, &pm)) {
+                        QImageReader reader(ws->mediaPath(image));
+                        reader.setAutoTransform(true);
+                        const QImage img = reader.read();
+                        if (!img.isNull()) {
+                            // Cover the frame (this also crops the letterbox bars of 4:3 thumbnails).
+                            const QImage scaled = img.scaled(px, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+                            pm = QPixmap::fromImage(scaled.copy((scaled.width() - px.width()) / 2, (scaled.height() - px.height()) / 2, px.width(), px.height()));
+                            pm.setDevicePixelRatio(p->device()->devicePixelRatioF());
+                            QPixmapCache::insert(key, pm);
+                        }
+                    }
+                    if (!pm.isNull())
+                        p->drawPixmap(fr.topLeft(), pm);
+                }
+                // A shade at the bottom for the title.
+                QLinearGradient shade(fr.bottomLeft() - QPointF(0, 90 * k), fr.bottomLeft());
+                shade.setColorAt(0, QColor(0, 0, 0, 0));
+                shade.setColorAt(1, QColor(0, 0, 0, 190));
+                p->fillRect(QRectF(fr.left(), fr.bottom() - 90 * k, fr.width(), 90 * k), shade);
+                p->restore();
+                p->setPen(QPen(Theme::withAlpha(QColor(255, 255, 255), hovered ? 0.18 : 0.08), 1));
+                p->setBrush(Qt::NoBrush);
+                p->drawRoundedRect(fr.adjusted(0.5, 0.5, -0.5, -0.5), 10 * k, 10 * k);
+                const double pr = 30 * k;
+                const QPointF center = fr.center();
+                p->setPen(Qt::NoPen);
+                p->setBrush(QColor(0x0C, 0x0C, 0x0F, hovered ? 235 : 200));
+                p->drawEllipse(center, pr, pr);
+                QPainterPath tri;
+                tri.moveTo(center + QPointF(-8 * k, -12 * k));
+                tri.lineTo(center + QPointF(13 * k, 0));
+                tri.lineTo(center + QPointF(-8 * k, 12 * k));
+                tri.closeSubpath();
+                p->setBrush(c.starlight);
+                p->drawPath(tri);
+                const QString title = b.data.value(QStringLiteral("title")).toString();
+                const QString who = b.data.value(QStringLiteral("site")).toString();
+                const QString provider = LinkPreview::providerOf(b.url);
+                p->setFont(Theme::uiFont(15 * k, QFont::DemiBold));
+                QFontMetricsF tfm(p->font());
+                p->setPen(QColor(0xF1, 0xF1, 0xF5));
+                const double tx = fr.left() + 16 * k, tw = fr.width() - 32 * k;
+                p->drawText(QRectF(tx, fr.bottom() - 52 * k, tw, 24 * k), Qt::AlignLeft | Qt::AlignVCenter,
+                            tfm.elidedText(title.isEmpty() ? b.url : title, Qt::ElideRight, tw));
+                p->setFont(Theme::uiFont(12.5 * k));
+                p->setPen(QColor(0xC9, 0xC9, 0xD0));
+                p->drawText(QRectF(tx, fr.bottom() - 30 * k, tw, 20 * k), Qt::AlignLeft | Qt::AlignVCenter,
+                            who.isEmpty() ? provider : QStringLiteral("%1 · %2").arg(provider, who));
+                drawCaption();
+                break;
+            }
+            [[fallthrough]];
+        case BlockType::Bookmark: {
             const QRectF r = body.adjusted(0, 2, 0, -2);
             card(r);
             const QString title = b.data.value(QStringLiteral("title")).toString();

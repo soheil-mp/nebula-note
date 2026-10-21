@@ -55,6 +55,8 @@ public:
     static double tocRowHeight(const BlockFormat::Style &style);
     static double tocTop(const BlockFormat::Style &style);
     static double captionHeight(const BlockFormat::Style &style);
+    // The 16:9 frame a video embed shows in, inside its object rect.
+    static QRectF videoFrame(const QRectF &objectRect);
     // Breadcrumb entries: the rect of each page's title (icon included).
     static QList<QPair<QRectF, QString>> breadcrumbParts(const QRectF &body, const QString &pageId, const BlockFormat::Style &style);
     // The rect of a button block's button inside its object rect.

@@ -21,6 +21,7 @@
 #include <QMessageBox>
 #include <QKeySequence>
 #include <QContextMenuEvent>
+#include <QClipboard>
 #include <QCursor>
 #include <QMouseEvent>
 #include <QKeyEvent>
@@ -137,6 +138,12 @@ void run(MainWindow &window, const QString &action)
             QMouseEvent move(QEvent::MouseMove, w->mapFromGlobal(QPointF(g)), QPointF(g), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
             QApplication::sendEvent(w, &move);
         }
+    } else if (action.startsWith(QLatin1String("paste:"))) {
+        // paste:text — through the clipboard, as Ctrl+V would.
+        QApplication::clipboard()->setText(arg);
+        QWidget *w = QApplication::focusWidget() ? QApplication::focusWidget() : &window;
+        QKeyEvent key(QEvent::KeyPress, Qt::Key_V, Qt::ControlModifier, QStringLiteral("\x16"));
+        QApplication::sendEvent(w, &key);
     } else if (action.startsWith(QLatin1String("enter:"))) {
         // Offscreen has no real pointer: tell the widget under the point, and
         // its parents, that the mouse came in, then move over it.
@@ -210,6 +217,8 @@ int main(int argc, char **argv)
     QApplication::setApplicationDisplayName(QStringLiteral("Nebula Note"));
     QApplication::setApplicationVersion(QStringLiteral(NEBULA_VERSION));
     QApplication::setDesktopFileName(QStringLiteral(NEBULA_APP_ID));
+    // Embedded web players (Qt WebEngine) share the window's GL context.
+    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     QApplication app(argc, argv);
 
     QCommandLineParser cli;

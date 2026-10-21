@@ -20,6 +20,7 @@ class QStackedWidget;
 class MainWindow : public QWidget
 {
     Q_OBJECT
+    friend class AppTests;
 public:
     explicit MainWindow(QWidget *parent = nullptr);
 

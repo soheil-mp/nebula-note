@@ -81,6 +81,54 @@ private:
     QVariantAnimation m_anim;
 };
 
+// A menu row: icon and label on the left, a gray value on the right, and a
+// chevron when it opens more.
+class MenuRow : public QAbstractButton
+{
+    Q_OBJECT
+public:
+    MenuRow(const QString &icon, const QString &label, const QString &value = {}, bool chevron = false, QWidget *parent = nullptr);
+    void setValue(const QString &value)
+    {
+        m_value = value;
+        update();
+    }
+    QSize sizeHint() const override { return {260, 30}; }
+
+protected:
+    void paintEvent(QPaintEvent *) override;
+
+private:
+    QString m_icon;
+    QString m_value;
+    bool m_chevron;
+};
+
+// A segmented choice ("Default | Small"): one option is always on.
+class Segmented : public QWidget
+{
+    Q_OBJECT
+public:
+    Segmented(const QList<QPair<QString, QString>> &options, const QString &current, QWidget *parent = nullptr);
+    QString current() const { return m_options.value(m_current).first; }
+    QSize sizeHint() const override;
+
+signals:
+    void changed(const QString &key);
+
+protected:
+    void paintEvent(QPaintEvent *) override;
+    void mouseMoveEvent(QMouseEvent *) override;
+    void mousePressEvent(QMouseEvent *) override;
+    void leaveEvent(QEvent *) override;
+
+private:
+    QRectF segment(int i) const;
+    QList<QPair<QString, QString>> m_options;
+    int m_current = 0;
+    int m_hover = -1;
+};
+
 // A search field with a leading icon.
 class SearchField : public QLineEdit
 {

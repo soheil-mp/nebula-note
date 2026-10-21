@@ -39,8 +39,40 @@ fi
 generator=()
 command -v ninja >/dev/null && generator=(-G Ninja)
 
+# Videos play inside pages through Qt WebEngine. Its libraries usually come
+# with the desktop; when the headers (qt6-webengine-dev) aren't installed,
+# fetch them into a cache (no root needed) and build against those.
+extra=()
+multiarch="$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo x86_64-linux-gnu)"
+syslib="/usr/lib/$multiarch"
+if [[ ! -e "$syslib/cmake/Qt6WebEngineWidgets/Qt6WebEngineWidgetsConfig.cmake" ]] \
+   && ls "$syslib"/libQt6WebEngineWidgets.so.6 >/dev/null 2>&1 && command -v apt-get >/dev/null && command -v dpkg-deb >/dev/null; then
+    cache="${XDG_CACHE_HOME:-$HOME/.cache}/nebula-note/qt6-webengine-dev"
+    want="$(dpkg-query -W -f='${Version}' libqt6webenginewidgets6 2>/dev/null || true)"
+    # Fetch again when the system's WebEngine has been updated since.
+    if [[ ! -e "$cache/usr/lib/$multiarch/cmake/Qt6WebEngineWidgets/Qt6WebEngineWidgetsConfig.cmake" || "$(cat "$cache/.version" 2>/dev/null)" != "$want" ]]; then
+        echo "==> Fetching the Qt WebEngine headers (for videos inside pages)"
+        tmp="$(mktemp -d)"
+        if (cd "$tmp" && apt-get download qt6-webengine-dev qt6-webengine-dev-tools qt6-webchannel-dev qt6-positioning-dev >/dev/null 2>&1); then
+            rm -rf "$cache" && mkdir -p "$cache"
+            for deb in "$tmp"/*.deb; do dpkg-deb -x "$deb" "$cache"; done
+            # The dev links point at the system's own libraries.
+            for lib in "$syslib"/libQt6WebEngine*.so.6* "$syslib"/libQt6WebChannel*.so.6* "$syslib"/libQt6Positioning*.so.6*; do
+                [[ -e "$lib" ]] && ln -sf "$lib" "$cache/usr/lib/$multiarch/$(basename "$lib")"
+            done
+            echo "$want" > "$cache/.version"
+        else
+            echo "    (couldn't download them; videos will open in the browser instead)"
+        fi
+        rm -rf "$tmp"
+    fi
+    if [[ -e "$cache/usr/lib/$multiarch/cmake/Qt6WebEngineWidgets/Qt6WebEngineWidgetsConfig.cmake" ]]; then
+        extra=(-DQT_ADDITIONAL_PACKAGES_PREFIX_PATH="$cache/usr" -DCMAKE_PREFIX_PATH="$cache/usr")
+    fi
+fi
+
 echo "==> Configuring"
-cmake -S . -B "$BUILD_DIR" "${generator[@]}" \
+cmake -S . -B "$BUILD_DIR" "${generator[@]}" "${extra[@]}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$PREFIX" >/dev/null
 echo "==> Building"

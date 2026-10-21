@@ -10,7 +10,9 @@
 
 #include <QDateTime>
 #include <QFontMetricsF>
+#include <QHash>
 #include <QLocale>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -36,6 +38,7 @@ public:
         Workspace *ws = Workspace::instance();
         m_recent.clear();
         m_upcoming.clear();
+        m_dated.clear();
         if (!ws)
             return;
         for (const PageMeta *m : ws->recent(8))
@@ -61,6 +64,8 @@ public:
             for (const PageMeta *row : ws->rows(db->id)) {
                 const QJsonObject props = ws->props(row->id);
                 const QDate d = dateOf(props.value(dateProp));
+                if (d.isValid())
+                    m_dated[d].append(row->id); // every dated row marks the calendar
                 if (!d.isValid() || d < today || d > today.addDays(14))
                     continue;
                 // Finished work isn't upcoming.
@@ -101,18 +106,25 @@ public:
         y += 36;
         const QStringList actions = {QStringLiteral("new"), QStringLiteral("db"), QStringLiteral("import")};
         // Side by side, or stacked when they'd get cramped.
-        const int cols = colW >= 3 * 200 + 2 * gap ? 3 : 1;
+        const int cols = colW >= 3 * 165 + 2 * gap ? 3 : 1;
         const double tileW = (colW - (cols - 1) * gap) / cols;
         for (int i = 0; i < actions.size(); ++i)
             m_targets.append({QRectF(x0 + (i % cols) * (tileW + gap), y + (i / cols) * (76 + gap), tileW, 76), actions[i]});
         const int tileRows = (int(actions.size()) + cols - 1) / cols;
         y += tileRows * 76 + (tileRows - 1) * gap + 40;
-        // Upcoming.
+        // Upcoming, with a month calendar beside it (or under it when narrow).
         m_upcomingTop = y;
+        const bool side = colW >= 720;
+        const double calW = side ? 300 : qMin(colW, 340.0);
+        m_listW = side ? colW - calW - 28 : colW;
         y += 36;
         for (int i = 0; i < m_upcoming.size(); ++i)
-            m_targets.append({QRectF(x0, y + i * 40, colW, 38), QStringLiteral("up:") + m_upcoming[i].row});
-        y += qMax(1, int(m_upcoming.size())) * 40 + 60;
+            m_targets.append({QRectF(x0, y + i * 40, m_listW, 38), QStringLiteral("up:") + m_upcoming[i].row});
+        double listBottom = y + qMax(1, int(m_upcoming.size())) * 40;
+        const double calTop = side ? m_upcomingTop + 2 : listBottom + 24;
+        m_calRect = QRectF(side ? x0 + colW - calW : x0, calTop, calW, kCalHeader + kCalWeekdays + 6 * kCalRow + 12);
+        layoutCalendar();
+        y = qMax(listBottom, m_calRect.bottom()) + 60;
         m_x0 = x0;
         m_colW = colW;
         setFixedHeight(int(y));
@@ -209,12 +221,15 @@ protected:
         if (m_upcoming.isEmpty()) {
             p.setFont(Theme::uiFont(13.5));
             p.setPen(c.fog);
-            p.drawText(QRectF(m_x0, m_upcomingTop + 40, m_colW, 30), Qt::AlignVCenter,
+            p.drawText(QRectF(m_x0, m_upcomingTop + 40, m_listW, 40), Qt::AlignVCenter | Qt::TextWordWrap,
                        tr("Nothing dated in the next two weeks. Dates in your databases appear here."));
         }
+        paintCalendar(p);
 
         for (const Target &t : m_targets) {
             const bool hover = t.action == m_hoverAction;
+            if (t.action.startsWith(QLatin1String("day:")) || t.action.startsWith(QLatin1String("cal:")))
+                continue;
             if (t.action.startsWith(QLatin1String("page:"))) {
                 const QString id = t.action.mid(5);
                 const PageMeta *m = ws->page(id);
@@ -331,14 +346,26 @@ protected:
                 hover = t.action;
         if (hover != m_hoverAction) {
             m_hoverAction = hover;
-            setCursor(hover.isEmpty() ? Qt::ArrowCursor : Qt::PointingHandCursor);
+            // Days are only clickable when something is dated on them.
+            const bool idleDay = hover.startsWith(QLatin1String("day:")) && !m_dated.contains(QDate::fromString(hover.mid(4), Qt::ISODate));
+            setCursor(hover.isEmpty() || idleDay ? Qt::ArrowCursor : Qt::PointingHandCursor);
             update();
         }
     }
     void mousePressEvent(QMouseEvent *e) override
     {
-        if (e->button() == Qt::LeftButton && !m_hoverAction.isEmpty())
-            emit activated(m_hoverAction);
+        if (e->button() != Qt::LeftButton || m_hoverAction.isEmpty())
+            return;
+        if (m_hoverAction == QLatin1String("cal:prev") || m_hoverAction == QLatin1String("cal:next")) {
+            m_month = m_month.addMonths(m_hoverAction == QLatin1String("cal:prev") ? -1 : 1);
+            relayout();
+            return;
+        }
+        if (m_hoverAction.startsWith(QLatin1String("day:"))) {
+            openDay(QDate::fromString(m_hoverAction.mid(4), Qt::ISODate), e->globalPosition().toPoint());
+            return;
+        }
+        emit activated(m_hoverAction);
     }
     void leaveEvent(QEvent *) override
     {
@@ -347,6 +374,100 @@ protected:
     }
 
 private:
+    static constexpr double kCalHeader = 44, kCalWeekdays = 22, kCalRow = 32;
+
+    QDate calendarStart() const
+    {
+        // Weeks start on Monday; six rows always.
+        return m_month.addDays(1 - m_month.dayOfWeek());
+    }
+    void layoutCalendar()
+    {
+        const QRectF r = m_calRect;
+        m_targets.append({QRectF(r.right() - 64, r.top() + 10, 26, 26), QStringLiteral("cal:prev")});
+        m_targets.append({QRectF(r.right() - 36, r.top() + 10, 26, 26), QStringLiteral("cal:next")});
+        const double cellW = (r.width() - 16) / 7.0;
+        const QDate start = calendarStart();
+        for (int i = 0; i < 42; ++i) {
+            const QRectF cell(r.left() + 8 + (i % 7) * cellW, r.top() + kCalHeader + kCalWeekdays + (i / 7) * kCalRow, cellW, kCalRow);
+            m_targets.append({cell, QStringLiteral("day:") + start.addDays(i).toString(Qt::ISODate)});
+        }
+    }
+    void paintCalendar(QPainter &p)
+    {
+        const auto &c = Theme::colors();
+        const QRectF r = m_calRect;
+        Theme::paintCard(p, r, 12, QColor(0x19, 0x19, 0x1D));
+        const QLocale en(QLocale::English);
+        p.setFont(Theme::uiFont(14, QFont::DemiBold));
+        p.setPen(c.starlight);
+        p.drawText(QRectF(r.left() + 16, r.top() + 10, r.width() - 90, 26), Qt::AlignVCenter, en.toString(m_month, QStringLiteral("MMMM yyyy")));
+        for (const QString &id : {QStringLiteral("cal:prev"), QStringLiteral("cal:next")}) {
+            for (const Target &t : m_targets)
+                if (t.action == id) {
+                    const bool hover = m_hoverAction == id;
+                    if (hover)
+                        Theme::paintHover(p, t.rect, 1.3, 6);
+                    Icons::paint(p, t.rect.adjusted(6, 6, -6, -6), id == QLatin1String("cal:prev") ? QStringLiteral("chevron-left") : QStringLiteral("chevron-right"),
+                                 hover ? c.starlight : c.haze);
+                }
+        }
+        const double cellW = (r.width() - 16) / 7.0;
+        p.setFont(Theme::uiFont(11, QFont::Medium));
+        p.setPen(c.dust);
+        for (int d = 0; d < 7; ++d)
+            p.drawText(QRectF(r.left() + 8 + d * cellW, r.top() + kCalHeader, cellW, kCalWeekdays), Qt::AlignCenter,
+                       en.dayName(d + 1, QLocale::ShortFormat).left(2));
+        const QDate today = QDate::currentDate();
+        for (const Target &t : m_targets) {
+            if (!t.action.startsWith(QLatin1String("day:")))
+                continue;
+            const QDate d = QDate::fromString(t.action.mid(4), Qt::ISODate);
+            const bool inMonth = d.month() == m_month.month();
+            const bool items = m_dated.contains(d);
+            const QPointF center(t.rect.center().x(), t.rect.center().y() - 2);
+            const QRectF dot(center.x() - 13, center.y() - 13, 26, 26);
+            if (d == today) {
+                p.setPen(Qt::NoPen);
+                p.setBrush(c.starlight);
+                p.drawEllipse(dot);
+            } else if (m_hoverAction == t.action && items) {
+                p.setPen(Qt::NoPen);
+                p.setBrush(c.graphite);
+                p.drawEllipse(dot);
+            }
+            p.setFont(Theme::uiFont(12.5, d == today ? QFont::DemiBold : QFont::Normal));
+            p.setPen(d == today ? c.basalt : (inMonth ? c.moon : c.ash));
+            p.drawText(dot, Qt::AlignCenter, QString::number(d.day()));
+            if (items) {
+                // Something is dated that day.
+                p.setPen(Qt::NoPen);
+                p.setBrush(d == today ? c.starlight : (inMonth ? c.mist : c.ash));
+                p.drawEllipse(QPointF(center.x(), dot.bottom() + 3.5), 2, 2);
+            }
+        }
+    }
+    // What's dated on a day: open it, or pick from a menu when there are several.
+    void openDay(const QDate &day, const QPoint &globalPos)
+    {
+        const QStringList ids = m_dated.value(day);
+        if (ids.isEmpty())
+            return;
+        if (ids.size() == 1) {
+            emit activated(QStringLiteral("page:") + ids.first());
+            return;
+        }
+        Workspace *ws = Workspace::instance();
+        QMenu *menu = Theme::makeMenu(this);
+        Theme::addMenuSection(menu, QLocale(QLocale::English).toString(day, QStringLiteral("dddd, MMMM d")));
+        for (const QString &id : ids) {
+            const PageMeta *m = ws->page(id);
+            menu->addAction(Icons::icon(m && !m->icon.isEmpty() && m->icon.startsWith(QLatin1String("glyph:")) ? m->icon.mid(6) : QStringLiteral("page")),
+                            ws->title(id), this, [this, id] { emit activated(QStringLiteral("page:") + id); });
+        }
+        menu->popup(globalPos);
+    }
+
     struct Upcoming {
         QString row, db;
         QDate date;
@@ -356,7 +477,10 @@ private:
     QList<Target> m_targets;
     QString m_hoverAction;
     QRectF m_searchRect;
-    double m_recentTop = 0, m_quickTop = 0, m_upcomingTop = 0, m_x0 = 0, m_colW = 600;
+    double m_recentTop = 0, m_quickTop = 0, m_upcomingTop = 0, m_x0 = 0, m_colW = 600, m_listW = 600;
+    QDate m_month = QDate(QDate::currentDate().year(), QDate::currentDate().month(), 1);
+    QHash<QDate, QStringList> m_dated; // rows by the date they carry
+    QRectF m_calRect;
 };
 
 HomeView::HomeView(QWidget *parent)

@@ -172,8 +172,16 @@ public:
         setAttribute(Qt::WA_TranslucentBackground);
     }
     std::function<void(int)> jump;
-    void setEntries(const QList<TocEntry> &entries)
+    void setEntries(const QList<TocEntry> &all)
     {
+        // Only the biggest headings on the page (# where there are any).
+        int top = 4;
+        for (const TocEntry &e : all)
+            top = qMin(top, e.level);
+        QList<TocEntry> entries;
+        for (const TocEntry &e : all)
+            if (e.level == top)
+                entries.append(e);
         m_entries = entries;
         m_current = qMin(m_current, int(entries.size()) - 1);
         relayoutSelf();

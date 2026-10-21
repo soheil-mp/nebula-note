@@ -42,6 +42,17 @@ file(GLOB NEBULA_UI_SOURCES CONFIGURE_DEPENDS
 add_library(nebula_ui STATIC ${NEBULA_UI_SOURCES})
 target_link_libraries(nebula_ui PUBLIC nebula_core Qt6::Widgets Qt6::Svg Qt6::Network)
 
+# Video embeds play inside pages when Qt WebEngine is there (qt6-webengine-dev);
+# without it they show a thumbnail and open in the browser.
+find_package(Qt6 QUIET OPTIONAL_COMPONENTS WebEngineWidgets)
+if(Qt6WebEngineWidgets_FOUND)
+    message(STATUS "Qt WebEngine found: videos play inside pages")
+    target_link_libraries(nebula_ui PUBLIC Qt6::WebEngineWidgets)
+    target_compile_definitions(nebula_ui PUBLIC NEBULA_HAVE_WEBENGINE)
+else()
+    message(STATUS "Qt WebEngine not found: video embeds open in the browser (install qt6-webengine-dev to play them in pages)")
+endif()
+
 if(KF6WindowSystem_FOUND)
     message(STATUS "KF6WindowSystem found: native KWin shadows and blur enabled")
     target_link_libraries(nebula_ui PUBLIC KF6::WindowSystem)

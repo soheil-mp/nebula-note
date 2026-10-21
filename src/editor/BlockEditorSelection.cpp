@@ -47,7 +47,7 @@ void BlockEditor::clearBlockSelection()
     if (m_blockSel.first < 0)
         return;
     m_blockSel = {-1, -1};
-    setCursorWidth(2);
+    setCursorWidth(blockTypeIsAtomic(typeOf(textCursor().block())) ? 0 : 2);
     viewport()->update();
 }
 

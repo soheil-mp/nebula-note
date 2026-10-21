@@ -563,7 +563,8 @@ void PageHeader::relayout()
     m_actions->setGeometry(m_colX - 8, y, m_colW, 30);
     y += 34;
     m_title->setGeometry(m_colX, y, m_colW, m_title->preferredHeight());
-    y += m_title->height() + 4;
+    // Breathing room between the title and what follows it.
+    y += m_title->height() + 18;
     if (height() != y) {
         setFixedHeight(y);
         emit heightChanged();

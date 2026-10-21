@@ -10,6 +10,7 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPointer>
 #include <QPushButton>
@@ -222,6 +223,128 @@ void Switch::paintEvent(QPaintEvent *)
     p.setPen(Qt::NoPen);
     p.setBrush(Theme::mix(c.haze, c.basalt, t));
     p.drawEllipse(QRectF(x, track.top() + 3, d, d));
+}
+
+// ---- MenuRow -----------------------------------------------------------------------
+
+MenuRow::MenuRow(const QString &icon, const QString &label, const QString &value, bool chevron, QWidget *parent)
+    : QAbstractButton(parent)
+    , m_icon(icon)
+    , m_value(value)
+    , m_chevron(chevron)
+{
+    setText(label);
+    setCursor(Qt::PointingHandCursor);
+    setAttribute(Qt::WA_Hover);
+}
+
+void MenuRow::paintEvent(QPaintEvent *)
+{
+    const auto &c = Theme::colors();
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    const bool hot = underMouse() && isEnabled();
+    if (hot)
+        Theme::paintHover(p, QRectF(rect()), 1.0, 6);
+    const double textX = m_icon.isEmpty() ? 8 : 34;
+    if (!m_icon.isEmpty())
+        Icons::paint(p, QRectF(8, height() / 2.0 - 8, 16, 16), m_icon, hot ? c.starlight : c.mist);
+    double right = width() - 8;
+    if (m_chevron) {
+        Icons::paint(p, QRectF(right - 13, height() / 2.0 - 6.5, 13, 13), QStringLiteral("chevron-right"), c.fog);
+        right -= 19;
+    }
+    p.setFont(Theme::uiFont(13.5));
+    const QFontMetricsF fm(p.font());
+    double valueW = 0;
+    if (!m_value.isEmpty()) {
+        valueW = qMin(fm.horizontalAdvance(m_value), (right - textX) * 0.5);
+        p.setPen(c.fog);
+        p.drawText(QRectF(right - valueW, 0, valueW, height()), Qt::AlignVCenter | Qt::AlignRight, fm.elidedText(m_value, Qt::ElideRight, valueW));
+        valueW += 12;
+    }
+    p.setPen(isEnabled() ? (hot ? c.starlight : c.moon) : c.dust);
+    p.drawText(QRectF(textX, 0, right - valueW - textX, height()), Qt::AlignVCenter, fm.elidedText(text(), Qt::ElideRight, right - valueW - textX));
+}
+
+// ---- Segmented -----------------------------------------------------------------------
+
+Segmented::Segmented(const QList<QPair<QString, QString>> &options, const QString &current, QWidget *parent)
+    : QWidget(parent)
+    , m_options(options)
+{
+    for (int i = 0; i < m_options.size(); ++i)
+        if (m_options[i].first == current)
+            m_current = i;
+    setMouseTracking(true);
+    setCursor(Qt::PointingHandCursor);
+    setFixedSize(sizeHint());
+}
+
+QSize Segmented::sizeHint() const
+{
+    const QFontMetricsF fm(Theme::uiFont(12.5, QFont::Medium));
+    double widest = 0;
+    for (const auto &o : m_options)
+        widest = qMax(widest, fm.horizontalAdvance(o.second));
+    return {int(m_options.size() * (widest + 20) + 4), 26};
+}
+
+QRectF Segmented::segment(int i) const
+{
+    const double w = (width() - 4.0) / qMax(1, int(m_options.size()));
+    return QRectF(2 + i * w, 2, w, height() - 4);
+}
+
+void Segmented::paintEvent(QPaintEvent *)
+{
+    const auto &c = Theme::colors();
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(QPen(c.ash, 1));
+    p.setBrush(QColor(0x18, 0x18, 0x1C));
+    p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), 7, 7);
+    p.setFont(Theme::uiFont(12.5, QFont::Medium));
+    for (int i = 0; i < m_options.size(); ++i) {
+        const QRectF r = segment(i);
+        if (i == m_current) {
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor(0x34, 0x34, 0x3C));
+            p.drawRoundedRect(r, 5, 5);
+        } else if (i == m_hover) {
+            Theme::paintHover(p, r, 1.0, 5);
+        }
+        p.setPen(i == m_current ? c.starlight : (i == m_hover ? c.moon : c.haze));
+        p.drawText(r, Qt::AlignCenter, m_options[i].second);
+    }
+}
+
+void Segmented::mouseMoveEvent(QMouseEvent *e)
+{
+    int h = -1;
+    for (int i = 0; i < m_options.size(); ++i)
+        if (segment(i).contains(e->position()))
+            h = i;
+    if (h != m_hover) {
+        m_hover = h;
+        update();
+    }
+}
+
+void Segmented::mousePressEvent(QMouseEvent *e)
+{
+    for (int i = 0; i < m_options.size(); ++i)
+        if (segment(i).contains(e->position()) && i != m_current) {
+            m_current = i;
+            update();
+            emit changed(m_options[i].first);
+        }
+}
+
+void Segmented::leaveEvent(QEvent *)
+{
+    m_hover = -1;
+    update();
 }
 
 // ---- SearchField -----------------------------------------------------------------

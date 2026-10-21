@@ -1,9 +1,13 @@
 // Inline databases and linked views: a live database body over each
-// database block. The block reserves the body's height in the layout.
+// database block (the block reserves the body's height in the layout); and
+// video embeds playing in place, a web player over the frame.
 #include "BlockEditor.h"
 #include "BlockEditorPrivate.h"
+#include "TextObjects.h"
 
+#include "core/MediaLinks.h"
 #include "core/Workspace.h"
+#include "ui/WebPlayer.h"
 #include "views/DatabaseBody.h"
 
 #include <QAbstractTextDocumentLayout>
@@ -120,6 +124,41 @@ void BlockEditor::updateEmbeds()
             m_ctx.embedHeights.insert(id, body->height());
             document()->markContentsDirty(b.position(), b.length());
             relayout = true;
+        }
+    }
+    // Videos playing in place sit over their frame.
+    QSet<QString> playing;
+    for (QTextBlock b = document()->begin(); b.isValid(); b = b.next()) {
+        if (typeOf(b) != BlockType::Embed)
+            continue;
+        const QString id = idOf(b);
+        if (!m_playing.contains(id))
+            continue;
+        const QString url = blockProps(b).url;
+        if (!MediaLinks::isVideoLink(url))
+            continue;
+        playing.insert(id);
+        QPointer<QWidget> &player = m_players[id];
+        if (!player || player->property("videoUrl").toString() != url) {
+            delete player;
+            player = WebPlayer::create(viewport(), MediaLinks::playerUrl(url, true));
+            if (!player)
+                continue;
+            player->setProperty("videoUrl", url);
+        }
+        const QRectF frame = TextObjects::videoFrame(objectRect(b));
+        player->setGeometry(frame.toAlignedRect());
+        player->setVisible(b.isVisible() && !frame.isEmpty());
+        player->raise();
+    }
+    m_playing = playing;
+    for (auto it = m_players.begin(); it != m_players.end();) {
+        if (!playing.contains(it.key()) || !it.value()) {
+            if (it.value())
+                it.value()->deleteLater();
+            it = m_players.erase(it);
+        } else {
+            ++it;
         }
     }
     for (auto it = m_embeds.begin(); it != m_embeds.end();) {

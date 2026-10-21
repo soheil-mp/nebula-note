@@ -27,7 +27,7 @@ area. The core of daily use is:
 | Databases | properties (text, number, select, multi-select, status, date, checkbox, URL, email, phone, created / edited time), rows are pages | ✅ these 12 types; relation, rollup, formula, person and files are left out |
 | Views | table, board, list, gallery, calendar, timeline; filter, sort, group, per-view settings | ✅ table, board, list, gallery, calendar with filter, sort and grouping; timeline left out |
 | Sharing | export Markdown / HTML / PDF, import Markdown, CSV, Notion export | ✅ including the Notion "Markdown & CSV" zip |
-| Templates | template gallery, duplicate | ✅ built-in templates and Duplicate |
+| Templates | template gallery, duplicate | Duplicate and database row templates (the page template gallery was left out) |
 
 Real-time multi-user collaboration, comments, AI and web embeds are left out on
 purpose. They need a server, an account system or a web engine. The Qt

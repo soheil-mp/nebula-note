@@ -7,6 +7,7 @@
 #include "core/Ids.h"
 #include "core/Markdown.h"
 #include "core/Settings.h"
+#include "core/MediaLinks.h"
 #include "core/Workspace.h"
 #include "ui/Cosmos.h"
 #include "ui/Icons.h"
@@ -293,6 +294,13 @@ void BlockEditor::insertFromMimeData(const QMimeData *source)
             c.insertText(s.text, spanFormat(s, BlockType::Paragraph, m_ctx.style));
             setTextCursor(c);
             setCurrentCharFormat(baseCharFormat(BlockType::Paragraph, m_ctx.style));
+            if (MediaLinks::isVideoLink(s.text)) {
+                // A video link embeds the video right away.
+                m_pasteBlock = here.blockNumber();
+                m_pasteUrl = s.text;
+                runPasteChoice(QStringLiteral("embed"));
+                return;
+            }
             showPasteMenu(here.blockNumber(), s.text);
             return;
         }

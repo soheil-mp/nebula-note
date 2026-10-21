@@ -3,6 +3,7 @@
 #include "core/Exporter.h"
 #include "core/Importer.h"
 #include "core/Markdown.h"
+#include "core/MediaLinks.h"
 #include "core/Schema.h"
 #include "core/Workspace.h"
 #include "core/Zip.h"
@@ -436,6 +437,26 @@ private slots:
         QCOMPARE(r.names().size(), 2);
         QCOMPARE(r.read(QStringLiteral("a.txt")), QByteArray("hello"));
         QCOMPARE(r.read(QStringLiteral("dir/b.bin")), big);
+    }
+
+    void videoLinks()
+    {
+        using namespace MediaLinks;
+        QCOMPARE(youtubeId(QStringLiteral("https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=x")), QStringLiteral("dQw4w9WgXcQ"));
+        QCOMPARE(youtubeId(QStringLiteral("https://youtu.be/dQw4w9WgXcQ?t=42")), QStringLiteral("dQw4w9WgXcQ"));
+        QCOMPARE(youtubeId(QStringLiteral("https://youtube.com/shorts/dQw4w9WgXcQ")), QStringLiteral("dQw4w9WgXcQ"));
+        QCOMPARE(youtubeId(QStringLiteral("https://m.youtube.com/embed/dQw4w9WgXcQ")), QStringLiteral("dQw4w9WgXcQ"));
+        QVERIFY(youtubeId(QStringLiteral("https://www.youtube.com/@channel")).isEmpty());
+        QVERIFY(youtubeId(QStringLiteral("https://notyoutube.com/watch?v=dQw4w9WgXcQ")).isEmpty());
+        QVERIFY(isVideoLink(QStringLiteral("https://vimeo.com/76979871")));
+        QVERIFY(!isVideoLink(QStringLiteral("https://vimeo.com/channels/staffpicks")));
+        QVERIFY(!isVideoLink(QStringLiteral("https://example.org/watch?v=dQw4w9WgXcQ")));
+        // Start times carry over to the player.
+        QCOMPARE(playerUrl(QStringLiteral("https://youtu.be/dQw4w9WgXcQ?t=1m30s")),
+                 QStringLiteral("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&modestbranding=1&playsinline=1&autoplay=1&start=90"));
+        QCOMPARE(playerUrl(QStringLiteral("https://vimeo.com/76979871"), false), QStringLiteral("https://player.vimeo.com/video/76979871?dnt=1"));
+        QVERIFY(oembedUrl(QStringLiteral("https://youtu.be/dQw4w9WgXcQ")).startsWith(QStringLiteral("https://www.youtube.com/oembed?")));
+        QCOMPARE(thumbnailUrl(QStringLiteral("https://youtu.be/dQw4w9WgXcQ")), QStringLiteral("https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"));
     }
 
     void notionImport()

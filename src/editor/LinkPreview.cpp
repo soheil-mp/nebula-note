@@ -1,8 +1,11 @@
 #include "LinkPreview.h"
 
+#include "core/MediaLinks.h"
 #include "core/Workspace.h"
 
 #include <QCoreApplication>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QPointer>
@@ -92,15 +95,27 @@ QString LinkPreview::providerOf(const QString &url)
 
 void LinkPreview::fetch(const QString &url, std::function<void(const Info &)> done)
 {
-    QNetworkRequest req{QUrl(url)};
+    // Videos: the provider's oEmbed answers with the title and a thumbnail
+    // (the watch page itself may be a consent wall).
+    const QString oembed = MediaLinks::oembedUrl(url);
+    QNetworkRequest req{QUrl(oembed.isEmpty() ? url : oembed)};
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Mozilla/5.0 (X11; Linux x86_64) NebulaNote/1.0"));
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     QNetworkReply *reply = m_net->get(req);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, url, done] {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, url, oembed, done] {
         reply->deleteLater();
         Info info;
-        if (reply->error() == QNetworkReply::NoError)
+        if (reply->error() == QNetworkReply::NoError && !oembed.isEmpty()) {
+            const QJsonObject o = QJsonDocument::fromJson(reply->readAll()).object();
+            info.title = o.value(QStringLiteral("title")).toString();
+            info.site = o.value(QStringLiteral("author_name")).toString();
+            info.imageUrl = o.value(QStringLiteral("thumbnail_url")).toString();
+            info.ok = !info.title.isEmpty();
+        } else if (reply->error() == QNetworkReply::NoError) {
             info = parse(reply->readAll(), reply->url().toString());
+        }
+        if (info.imageUrl.isEmpty())
+            info.imageUrl = MediaLinks::thumbnailUrl(url);
         if (info.imageUrl.isEmpty() || !Workspace::instance()) {
             done(info);
             return;

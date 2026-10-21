@@ -773,6 +773,27 @@ private slots:
         QCOMPARE(saved().first().spans.first().mentionBlock, blockId);
     }
 
+    void pastedVideoLinkEmbedsAtOnce()
+    {
+        fresh({para("")});
+        QMimeData mime;
+        mime.setText("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+        m_ed->insertFromMimeData(&mime);
+        settle();
+        // No menu: the video is embedded, and writing goes on below it.
+        QVERIFY(!m_ed->m_pasteMenu || !m_ed->m_pasteMenu->isVisible());
+        const QList<Block> out = saved();
+        QVERIFY(out.size() >= 2);
+        QCOMPARE(out[0].type, BlockType::Embed);
+        QCOMPARE(out[0].url, QStringLiteral("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+        QCOMPARE(out[1].type, BlockType::Paragraph);
+        QCOMPARE(m_ed->textCursor().block().blockNumber(), 1);
+        // A 16:9 frame.
+        const QRectF r = m_ed->objectRect(block(0));
+        const QRectF frame = TextObjects::videoFrame(r);
+        QVERIFY(qAbs(frame.width() / frame.height() - 16.0 / 9.0) < 0.02);
+    }
+
     void hoveredImageShowsItsToolbar()
     {
         // A real picture, so the image has a size.
