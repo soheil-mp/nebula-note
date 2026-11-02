@@ -234,10 +234,12 @@ toasts are announced. Buttons, switches and menus work from the keyboard
 (Tab, Enter, arrows) and show a focus ring when reached by key.
 
 `docs/NOTION_PARITY.md` lists Notion's features one by one and how Nebula Note
-covers them; `docs/RESEARCH.md` describes the research and design decisions.
+covers them; `docs/RESEARCH.md` describes the research and design decisions;
+[`ROADMAP.md`](ROADMAP.md) lists the work planned next.
 
 ## Licence notes
 
+Nebula Note is released under the [MIT License](LICENSE).
 Inter is bundled under the SIL Open Font License (`resources/fonts/OFL-Inter.txt`).
 The video in the embed screenshot is *Big Buck Bunny* (© Blender Foundation,
 CC BY 3.0).
