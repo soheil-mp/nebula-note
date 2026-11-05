@@ -107,8 +107,13 @@ on the KDE runtime (the steps are at the top of the file).
   columns, colored columns, card size and previews), **list**, **gallery**,
   **calendar** (date ranges as spanning bars, weekends on or off, drag to move),
   **timeline** (day…year scales, drag bars and their ends, a table beside it,
-  dependency arrows, unscheduled items), **chart** (vertical/horizontal bars,
-  line, donut, number; stacking, sorting, cumulative, labels), **feed** and
+  dependency arrows, unscheduled items), **chart** set up like Notion's (vertical
+  and horizontal bars, line, donut, number; any property as the categories —
+  by name, one bar per page — and a count, sum, average, median, min or max as
+  the value; decimal places, a custom range, labelled reference lines,
+  stacking, sorting, omitting zeros, cumulative; grays or Notion's colours,
+  height, grid lines, axis names, data labels, legend, caption, smooth lines;
+  saved as PNG or SVG), **feed** and
   **form** (answers become rows; required questions).
 - **Filters** with Notion's advanced builder: AND/OR groups nested three
   levels deep, relative dates (today, one week ago…), "is in status group".

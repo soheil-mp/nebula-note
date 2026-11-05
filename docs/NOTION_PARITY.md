@@ -87,6 +87,7 @@ screenshots instead.
 | Property descriptions | ✅ |
 | Place, verification | ✗ |
 | Views: table, board, list, gallery, calendar, timeline, chart (bar, horizontal bar, line, donut, number), feed, form | ✅ |
+| Chart settings: X/Y "what to show" (Name for a bar per page; count, sum, average, median, min, max), decimal places, group by, range, reference lines, sort, omit zero values, color, height, grid lines, axis names, data labels, legend, caption, smooth line, save as PNG/SVG | ✅ (Notion's export has no views: charts are set up again after an import) |
 | Form view | ◐ answers become rows, required questions; no shareable link (local only) |
 | Map view | ✗ no map tiles |
 | Filters incl. advanced AND/OR groups (3 levels), relative dates, sorts, search | ✅ |

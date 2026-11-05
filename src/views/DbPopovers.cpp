@@ -1,6 +1,7 @@
 // Database popovers: the advanced filter builder, sorts, the view settings
 // menu and bulk editing.
 #include "DatabaseBody.h"
+#include "DbViews.h"
 
 #include "PropertyEditors.h"
 #include "core/DateParse.h"
@@ -13,8 +14,11 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QComboBox>
+#include <QDir>
+#include <QFileDialog>
 #include <QFrame>
 #include <QGridLayout>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QLabel>
@@ -585,6 +589,68 @@ private:
 
 // ---- settings ------------------------------------------------------------------------
 
+// A colour choice: a swatch, its name and a check when chosen.
+class ColorRow : public QAbstractButton
+{
+public:
+    ColorRow(const QString &key, const QString &name, bool current)
+        : m_key(key)
+        , m_current(current)
+    {
+        setText(name);
+        setCursor(Qt::PointingHandCursor);
+        setAttribute(Qt::WA_Hover);
+        setFocusPolicy(Qt::TabFocus);
+        setMinimumWidth(280);
+        setFixedHeight(30);
+        setObjectName(QStringLiteral("chart-color-") + key);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        const auto &c = Theme::colors();
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        if (underMouse() || hasFocus())
+            Theme::paintHover(p, QRectF(rect()), 1.0, 6);
+        const QRectF dot(10, height() / 2.0 - 7, 14, 14);
+        static const QHash<QString, QColor> swatches = {
+            {QStringLiteral("gray"), QColor(0x91, 0x91, 0x99)},   {QStringLiteral("brown"), QColor(0xA8, 0x80, 0x6A)},
+            {QStringLiteral("orange"), QColor(0xCF, 0x86, 0x48)}, {QStringLiteral("yellow"), QColor(0xCD, 0xAA, 0x4E)},
+            {QStringLiteral("green"), QColor(0x6E, 0xAD, 0x7C)},  {QStringLiteral("blue"), QColor(0x64, 0x96, 0xD6)},
+            {QStringLiteral("purple"), QColor(0x9B, 0x80, 0xCF)}, {QStringLiteral("pink"), QColor(0xC9, 0x74, 0xA6)},
+            {QStringLiteral("red"), QColor(0xD0, 0x6E, 0x66)},
+        };
+        p.setPen(Qt::NoPen);
+        if (m_key == QLatin1String("auto")) {
+            // Grays: a split dot, light and dark.
+            p.setBrush(c.mist);
+            p.drawPie(dot, 90 * 16, 180 * 16);
+            p.setBrush(c.smoke);
+            p.drawPie(dot, 270 * 16, 180 * 16);
+        } else if (m_key == QLatin1String("colorful")) {
+            const QStringList order = {QStringLiteral("blue"), QStringLiteral("green"), QStringLiteral("orange"), QStringLiteral("purple")};
+            for (int i = 0; i < 4; ++i) {
+                p.setBrush(swatches.value(order[i]));
+                p.drawPie(dot, (90 - i * 90) * 16, -90 * 16);
+            }
+        } else {
+            p.setBrush(swatches.value(m_key));
+            p.drawEllipse(dot);
+        }
+        p.setFont(Theme::uiFont(13.5));
+        p.setPen(c.moon);
+        p.drawText(QRectF(34, 0, width() - 64, height()), Qt::AlignVCenter, text());
+        if (m_current)
+            Icons::paint(p, QRectF(width() - 26, height() / 2.0 - 7, 14, 14), QStringLiteral("check"), c.mist);
+    }
+
+private:
+    QString m_key;
+    bool m_current;
+};
+
 class SettingsPopover : public Popover
 {
 public:
@@ -722,6 +788,8 @@ private:
         const bool locked = s.locked;
         if (!locked)
             pageRow(viewTypeIcon(v.type), tr("Layout"), viewTypeName(v.type), QStringLiteral("layout"));
+        if (v.type == ViewType::Chart && !locked)
+            chartSections(s, v);
         int shown = 0;
         for (const Property *p : s.orderedProps(v))
             if (p->type != PropType::Title)
@@ -737,6 +805,7 @@ private:
                     DbPopovers::showFilters(body->window(), pos, body->databaseId(), [body] { return body->currentView(); },
                                             [body](const std::function<void(View &)> &fn) { body->editView(fn); });
             }, true);
+            if (v.type != ViewType::Chart) // charts sort in their axis settings
             row(QStringLiteral("sort"), tr("Sort"), v.sorts.isEmpty() ? QString() : tr("%n sort(s)", nullptr, int(v.sorts.size())), [this] {
                 const QPoint pos = mapToGlobal(QPoint(20, 40));
                 DatabaseBody *body = m_body;
@@ -779,6 +848,25 @@ private:
         m_layout->addWidget(sep);
         toggle(QStringLiteral("lock"), tr("Lock database"), s.locked, [this](bool on) { editSchema([on](Schema &s) { s.locked = on; }); });
         const QString viewId = v.id;
+        if (v.type == ViewType::Chart && v.chartType != QLatin1String("number"))
+            row(QStringLiteral("download"), tr("Save chart as…"), QString(), [this] {
+                auto *chart = qobject_cast<ChartView *>(m_body ? m_body->activeView() : nullptr);
+                if (!chart)
+                    return;
+                QPointer<ChartView> guard(chart);
+                const QString name = m_body->currentView().name.isEmpty() ? tr("Chart") : m_body->currentView().name;
+                close();
+                QString filter;
+                const QString path = QFileDialog::getSaveFileName(guard ? guard->window() : nullptr, tr("Save chart as"),
+                                                                  QDir::home().filePath(name + QStringLiteral(".png")),
+                                                                  tr("PNG image (*.png);;SVG image (*.svg)"), &filter);
+                if (path.isEmpty() || !guard)
+                    return;
+                QString target = path;
+                if (!target.endsWith(QLatin1String(".png"), Qt::CaseInsensitive) && !target.endsWith(QLatin1String(".svg"), Qt::CaseInsensitive))
+                    target += filter.contains(QLatin1String("svg")) ? QStringLiteral(".svg") : QStringLiteral(".png");
+                guard->saveImage(target);
+            });
         row(QStringLiteral("link"), tr("Copy link to view"), QString(), [this, viewId] {
             QApplication::clipboard()->setText(QStringLiteral("nebula://page/%1?v=%2").arg(m_body->databaseId(), viewId));
             close();
@@ -793,6 +881,265 @@ private:
                     m_body->deleteView(viewId);
                     close();
                 });
+        }
+    }
+
+    // ---- charts (laid out like Notion's: type, the two axes, style) ----
+
+    static QString chartValueLabel(const Schema &s, const QString &y)
+    {
+        const Property *p = s.prop(y.section(QLatin1Char(':'), 1));
+        if (y == QLatin1String("count") || !p)
+            return tr("Count");
+        return QStringLiteral("%1 (%2)").arg(p->name, calcName(y.section(QLatin1Char(':'), 0, 0)));
+    }
+    static QList<QPair<QString, QString>> chartColors()
+    {
+        return {{QStringLiteral("auto"), tr("Grays")},   {QStringLiteral("colorful"), tr("Colorful")}, {QStringLiteral("gray"), tr("Gray")},
+                {QStringLiteral("brown"), tr("Brown")},  {QStringLiteral("orange"), tr("Orange")},     {QStringLiteral("yellow"), tr("Yellow")},
+                {QStringLiteral("green"), tr("Green")},  {QStringLiteral("blue"), tr("Blue")},         {QStringLiteral("purple"), tr("Purple")},
+                {QStringLiteral("pink"), tr("Pink")},    {QStringLiteral("red"), tr("Red")}};
+    }
+    static QString labelOf(const QList<QPair<QString, QString>> &items, const QString &key)
+    {
+        for (const auto &it : items)
+            if (it.first == key)
+                return it.second;
+        return {};
+    }
+    QList<QPair<QString, QString>> chartSorts() const
+    {
+        return {{QStringLiteral("manual"), tr("Manual")},
+                {QStringLiteral("xasc"), tr("Alphabetical")},
+                {QStringLiteral("xdesc"), tr("Reverse alphabetical")},
+                {QStringLiteral("yasc"), tr("Value, low to high")},
+                {QStringLiteral("ydesc"), tr("Value, high to low")}};
+    }
+
+    void chartSections(const Schema &s, const View &v)
+    {
+        // Chart type: five buttons, like Notion's.
+        m_layout->addWidget(caption(tr("Chart type")));
+        auto *types = new QHBoxLayout;
+        types->setSpacing(6);
+        const QList<QPair<QString, QString>> kinds = {{QStringLiteral("bar"), tr("Vertical bar")},
+                                                      {QStringLiteral("hbar"), tr("Horizontal bar")},
+                                                      {QStringLiteral("line"), tr("Line")},
+                                                      {QStringLiteral("donut"), tr("Donut")},
+                                                      {QStringLiteral("number"), tr("Number")}};
+        for (const auto &k : kinds) {
+            auto *b = new FlatButton(QStringLiteral("chart-") + k.first);
+            b->setToolTip(k.second);
+            b->setCheckable(true);
+            b->setChecked(v.chartType == k.first);
+            b->setFilled(v.chartType == k.first);
+            b->setIconSize(18);
+            b->setFixedSize(50, 34);
+            b->setObjectName(QStringLiteral("chart-type-") + k.first);
+            const QString key = k.first;
+            QObject::connect(b, &FlatButton::clicked, this, [this, key] { edit([key](View &v) { v.chartType = key; }, true); });
+            types->addWidget(b);
+        }
+        types->addStretch();
+        m_layout->addLayout(types);
+
+        const QString type = v.chartType;
+        const bool horizontal = type == QLatin1String("hbar");
+        const Property *x = s.prop(v.chartX);
+        const Property *g = s.prop(v.chartGroup);
+        auto categorySection = [&](const QString &title) {
+            m_layout->addWidget(caption(title));
+            pageRow(x ? propTypeIcon(x->type) : QStringLiteral("list"), tr("What to show"), x ? x->name : tr("None"), QStringLiteral("chart-category"));
+            pageRow(QStringLiteral("sort"), tr("Sort by"), labelOf(chartSorts(), v.chartSort), QStringLiteral("chart-sort"));
+            toggle(QStringLiteral("eye-off"), tr("Omit zero values"), v.chartHideEmpty, [this](bool on) { edit([on](View &v) { v.chartHideEmpty = on; }); });
+        };
+        auto valueSection = [&](const QString &title, bool axes) {
+            m_layout->addWidget(caption(title));
+            pageRow(QStringLiteral("chart"), tr("What to show"), chartValueLabel(s, v.chartY), QStringLiteral("chart-value"));
+            pageRow(QStringLiteral("hash"), tr("Decimal places"), v.chartDecimals < 0 ? tr("Default") : QString::number(v.chartDecimals),
+                    QStringLiteral("chart-decimals"));
+            if (!axes)
+                return;
+            pageRow(QStringLiteral("group"), tr("Group by"), g ? g->name : tr("None"), QStringLiteral("chart-group"));
+            pageRow(QStringLiteral("chart-range"), tr("Range"),
+                    v.chartAutoRange ? tr("Auto") : QStringLiteral("%1 – %2").arg(formatNumber(v.chartMin, QStringLiteral("number")),
+                                                                                    formatNumber(v.chartMax, QStringLiteral("number"))),
+                    QStringLiteral("chart-range"));
+            pageRow(QStringLiteral("chart-refline"), tr("Reference lines"),
+                    v.chartRefLines.isEmpty() ? tr("None") : tr("%n line(s)", nullptr, int(v.chartRefLines.size())), QStringLiteral("chart-refs"));
+            toggle(QStringLiteral("trend"), tr("Cumulative"), v.chartCumulative, [this](bool on) { edit([on](View &v) { v.chartCumulative = on; }); });
+        };
+        if (type == QLatin1String("number")) {
+            valueSection(tr("Value"), false);
+        } else if (type == QLatin1String("donut")) {
+            categorySection(tr("Show each"));
+            valueSection(tr("Value"), false);
+        } else if (horizontal) {
+            // Bars run sideways: the values go along the X axis.
+            valueSection(tr("X axis"), true);
+            categorySection(tr("Y axis"));
+        } else {
+            categorySection(tr("X axis"));
+            valueSection(tr("Y axis"), true);
+        }
+        m_layout->addWidget(caption(tr("Style")));
+        pageRow(QStringLiteral("palette"), tr("Color"), labelOf(chartColors(), v.chartColor), QStringLiteral("chart-color"));
+        pageRow(QStringLiteral("settings"), tr("More style options"), QString(), QStringLiteral("chart-style"));
+        m_layout->addSpacing(4);
+    }
+
+    void chartRangePage(const View &v)
+    {
+        back(tr("Range"));
+        toggle(tr("Automatic"), v.chartAutoRange, [this](bool on) { edit([on](View &v) { v.chartAutoRange = on; }, true); });
+        if (v.chartAutoRange) {
+            auto *hint = new QLabel(tr("The axis starts at zero and ends just above the largest value."));
+            hint->setWordWrap(true);
+            hint->setFixedWidth(290);
+            hint->setStyleSheet(QStringLiteral("color: #8a8a94; padding: 4px 6px;"));
+            m_layout->addWidget(hint);
+            return;
+        }
+        auto field = [this](const QString &label, double value, std::function<void(double)> set) {
+            m_layout->addWidget(caption(label));
+            auto *e = new QLineEdit(QLocale(QLocale::English).toString(value, 'g', 12));
+            e->setFont(Theme::uiFont(13));
+            e->setMinimumWidth(280);
+            e->setObjectName(QStringLiteral("chart-range-") + label.toLower());
+            QObject::connect(e, &QLineEdit::editingFinished, this, [e, set] {
+                bool ok = false;
+                const double d = QLocale(QLocale::English).toDouble(e->text().trimmed(), &ok);
+                if (ok)
+                    set(d);
+            });
+            m_layout->addWidget(e);
+        };
+        field(tr("From"), v.chartMin, [this](double d) { edit([d](View &v) { v.chartMin = d; }); });
+        field(tr("To"), v.chartMax, [this](double d) { edit([d](View &v) { v.chartMax = d; }); });
+    }
+
+    void chartRefsPage(const View &v)
+    {
+        back(tr("Reference lines"));
+        if (v.chartRefLines.isEmpty()) {
+            auto *hint = new QLabel(tr("Dashed lines across the chart at values you choose: a goal, a limit, milestones."));
+            hint->setWordWrap(true);
+            hint->setFixedWidth(290);
+            hint->setStyleSheet(QStringLiteral("color: #8a8a94; padding: 4px 6px;"));
+            m_layout->addWidget(hint);
+        }
+        for (int i = 0; i < v.chartRefLines.size(); ++i) {
+            const View::RefLine line = v.chartRefLines[i];
+            auto *h = new QHBoxLayout;
+            h->setSpacing(6);
+            auto *value = new QLineEdit(QLocale(QLocale::English).toString(line.value, 'g', 12));
+            value->setFont(Theme::uiFont(13));
+            value->setFixedWidth(78);
+            value->setPlaceholderText(tr("Value"));
+            value->setObjectName(QStringLiteral("chart-ref-value"));
+            auto *label = new QLineEdit(line.label);
+            label->setFont(Theme::uiFont(13));
+            label->setMinimumWidth(160);
+            label->setPlaceholderText(tr("Label"));
+            label->setObjectName(QStringLiteral("chart-ref-label"));
+            auto *remove = new FlatButton(QStringLiteral("close"));
+            remove->setToolTip(tr("Remove line"));
+            h->addWidget(value);
+            h->addWidget(label, 1);
+            h->addWidget(remove);
+            m_layout->addLayout(h);
+            QObject::connect(value, &QLineEdit::editingFinished, this, [this, value, i] {
+                bool ok = false;
+                const double d = QLocale(QLocale::English).toDouble(value->text().trimmed(), &ok);
+                if (ok)
+                    edit([i, d](View &v) {
+                        if (i < v.chartRefLines.size())
+                            v.chartRefLines[i].value = d;
+                    });
+            });
+            QObject::connect(label, &QLineEdit::editingFinished, this, [this, label, i] {
+                const QString t = label->text().trimmed();
+                edit([i, t](View &v) {
+                    if (i < v.chartRefLines.size())
+                        v.chartRefLines[i].label = t;
+                });
+            });
+            QObject::connect(remove, &FlatButton::clicked, this, [this, i] {
+                edit(
+                    [i](View &v) {
+                        if (i < v.chartRefLines.size())
+                            v.chartRefLines.removeAt(i);
+                    },
+                    true);
+            });
+        }
+        auto *add = new FlatButton(QStringLiteral("plus"), tr("Add reference line"));
+        add->setTextSize(13);
+        add->setObjectName(QStringLiteral("chart-ref-add"));
+        QObject::connect(add, &FlatButton::clicked, this, [this] {
+            edit(
+                [](View &v) {
+                    View::RefLine l;
+                    // Next to the last one, a round step further.
+                    l.value = v.chartRefLines.isEmpty() ? 0 : v.chartRefLines.last().value + 10;
+                    v.chartRefLines.append(l);
+                },
+                true);
+        });
+        m_layout->addWidget(add, 0, Qt::AlignLeft);
+    }
+
+    void chartStylePage(const View &v)
+    {
+        back(tr("More style options"));
+        choice(tr("Height"),
+               {{QStringLiteral("small"), tr("Small")}, {QStringLiteral("medium"), tr("Medium")}, {QStringLiteral("large"), tr("Large")},
+                {QStringLiteral("xlarge"), tr("Extra large")}},
+               v.chartHeight, [this](const QString &k) { edit([k](View &v) { v.chartHeight = k; }); });
+        if (v.chartType != QLatin1String("donut") && v.chartType != QLatin1String("number")) {
+            choice(tr("Grid lines"),
+                   {{QStringLiteral("auto"), tr("Along the values")}, {QStringLiteral("horizontal"), tr("Horizontal")},
+                    {QStringLiteral("vertical"), tr("Vertical")}, {QStringLiteral("both"), tr("Both")}, {QStringLiteral("none"), tr("None")}},
+                   v.chartGrid, [this](const QString &k) { edit([k](View &v) { v.chartGrid = k; }); });
+            choice(tr("Axis names"),
+                   {{QStringLiteral("none"), tr("None")}, {QStringLiteral("x"), tr("X axis")}, {QStringLiteral("y"), tr("Y axis")},
+                    {QStringLiteral("both"), tr("Both")}},
+                   v.chartAxisNames, [this](const QString &k) { edit([k](View &v) { v.chartAxisNames = k; }); });
+        }
+        if (v.chartType != QLatin1String("number")) {
+            m_layout->addSpacing(6);
+            toggle(tr("Data labels"), v.chartLabels, [this](bool on) { edit([on](View &v) { v.chartLabels = on; }); });
+            toggle(tr("Legend"), v.chartLegend, [this](bool on) { edit([on](View &v) { v.chartLegend = on; }); });
+        }
+        if (v.chartType == QLatin1String("line")) {
+            toggle(tr("Smooth line"), v.chartSmooth, [this](bool on) { edit([on](View &v) { v.chartSmooth = on; }); });
+            toggle(tr("Shaded area"), v.chartGradient, [this](bool on) { edit([on](View &v) { v.chartGradient = on; }); });
+            toggle(tr("Data points"), v.chartDots, [this](bool on) { edit([on](View &v) { v.chartDots = on; }); });
+        }
+        m_layout->addWidget(caption(tr("Caption")));
+        auto *cap = new QLineEdit(v.chartCaption);
+        cap->setFont(Theme::uiFont(13));
+        cap->setMinimumWidth(280);
+        cap->setPlaceholderText(tr("A line under the chart"));
+        cap->setObjectName(QStringLiteral("chart-caption"));
+        QObject::connect(cap, &QLineEdit::editingFinished, this, [this, cap] {
+            const QString t = cap->text().trimmed();
+            edit([t](View &v) { v.chartCaption = t; });
+        });
+        m_layout->addWidget(cap);
+    }
+
+    void chartColorPage(const View &v)
+    {
+        back(tr("Color"));
+        for (const auto &it : chartColors()) {
+            auto *b = new ColorRow(it.first, it.second, it.first == v.chartColor);
+            const QString key = it.first;
+            QObject::connect(b, &ColorRow::clicked, this, [this, key] {
+                edit([key](View &v) { v.chartColor = key; });
+                openPage(QString());
+            });
+            m_layout->addWidget(b);
         }
     }
 
@@ -891,34 +1238,6 @@ private:
                         });
                     });
                 }
-            }
-            break;
-        }
-        case ViewType::Chart: {
-            choice(tr("Chart type"),
-                   {{QStringLiteral("bar"), tr("Vertical bar")}, {QStringLiteral("hbar"), tr("Horizontal bar")}, {QStringLiteral("line"), tr("Line")},
-                    {QStringLiteral("donut"), tr("Donut")}, {QStringLiteral("number"), tr("Number")}},
-                   v.chartType, [this](const QString &k) { edit([k](View &v) { v.chartType = k; }, true); });
-            if (v.chartType != QLatin1String("number"))
-                choice(v.chartType == QLatin1String("donut") ? tr("Slices by") : tr("X axis"), propsWhere(s, [](const Property &p) { return canGroupBy(p); }), v.chartX,
-                       [this](const QString &k) { edit([k](View &v) { v.chartX = k; }); });
-            QList<QPair<QString, QString>> ys{{QStringLiteral("count"), tr("Count")}};
-            for (const Property &p : s.props)
-                if (resultType(p) == PropType::Number)
-                    for (const QString &fn : {QStringLiteral("sum"), QStringLiteral("avg"), QStringLiteral("median"), QStringLiteral("min"), QStringLiteral("max")})
-                        ys.append({fn + QLatin1Char(':') + p.id, QStringLiteral("%1 · %2").arg(calcName(fn), p.name)});
-            choice(v.chartType == QLatin1String("number") ? tr("Value") : tr("Y axis"), ys, v.chartY, [this](const QString &k) { edit([k](View &v) { v.chartY = k; }); });
-            if (v.chartType == QLatin1String("bar") || v.chartType == QLatin1String("hbar") || v.chartType == QLatin1String("line"))
-                choice(tr("Group by"), propsWhere(s, [&v](const Property &p) { return canGroupBy(p) && p.id != v.chartX; }, true), v.chartGroup,
-                       [this](const QString &k) { edit([k](View &v) { v.chartGroup = k; }); });
-            if (v.chartType != QLatin1String("number")) {
-                choice(tr("Sort"),
-                       {{QStringLiteral("manual"), tr("Property order")}, {QStringLiteral("xasc"), tr("X axis ascending")}, {QStringLiteral("xdesc"), tr("X axis descending")},
-                        {QStringLiteral("yasc"), tr("Y axis ascending")}, {QStringLiteral("ydesc"), tr("Y axis descending")}},
-                       v.chartSort, [this](const QString &k) { edit([k](View &v) { v.chartSort = k; }); });
-                toggle(tr("Cumulative"), v.chartCumulative, [this](bool on) { edit([on](View &v) { v.chartCumulative = on; }); });
-                toggle(tr("Data labels"), v.chartLabels, [this](bool on) { edit([on](View &v) { v.chartLabels = on; }); });
-                toggle(tr("Hide empty groups"), v.chartHideEmpty, [this](bool on) { edit([on](View &v) { v.chartHideEmpty = on; }); });
             }
             break;
         }
@@ -1101,6 +1420,35 @@ private:
                      {{QStringLiteral("10"), tr("10 pages")}, {QStringLiteral("25"), tr("25 pages")}, {QStringLiteral("50"), tr("50 pages")},
                       {QStringLiteral("100"), tr("100 pages")}, {QStringLiteral("200"), tr("200 pages")}},
                      QString::number(v.loadLimit), [this](const QString &k) { edit([k](View &v) { v.loadLimit = k.toInt(); }); });
+        else if (m_page == QLatin1String("chart-category"))
+            listPage(tr("What to show"), propsWhere(s, [](const Property &p) { return canGroupBy(p); }), v.chartX,
+                     [this](const QString &k) { edit([k](View &v) { v.chartX = k; }); });
+        else if (m_page == QLatin1String("chart-sort"))
+            listPage(tr("Sort by"), chartSorts(), v.chartSort, [this](const QString &k) { edit([k](View &v) { v.chartSort = k; }); });
+        else if (m_page == QLatin1String("chart-value")) {
+            QList<QPair<QString, QString>> ys{{QStringLiteral("count"), tr("Count")}};
+            for (const Property &p : s.props)
+                if (resultType(p) == PropType::Number)
+                    for (const QString &fn : {QStringLiteral("sum"), QStringLiteral("avg"), QStringLiteral("median"), QStringLiteral("min"), QStringLiteral("max")})
+                        ys.append({fn + QLatin1Char(':') + p.id, chartValueLabel(s, fn + QLatin1Char(':') + p.id)});
+            listPage(tr("What to show"), ys, v.chartY, [this](const QString &k) { edit([k](View &v) { v.chartY = k; }); });
+        } else if (m_page == QLatin1String("chart-decimals"))
+            listPage(tr("Decimal places"),
+                     {{QStringLiteral("-1"), tr("Default")}, {QStringLiteral("0"), QStringLiteral("0")}, {QStringLiteral("1"), QStringLiteral("1")},
+                      {QStringLiteral("2"), QStringLiteral("2")}, {QStringLiteral("3"), QStringLiteral("3")}},
+                     QString::number(v.chartDecimals), [this](const QString &k) { edit([k](View &v) { v.chartDecimals = k.toInt(); }); });
+        else if (m_page == QLatin1String("chart-group"))
+            listPage(tr("Group by"),
+                     propsWhere(s, [&v](const Property &p) { return canGroupBy(p) && p.id != v.chartX && p.type != PropType::Title; }, true),
+                     v.chartGroup, [this](const QString &k) { edit([k](View &v) { v.chartGroup = k; }); });
+        else if (m_page == QLatin1String("chart-range"))
+            chartRangePage(v);
+        else if (m_page == QLatin1String("chart-refs"))
+            chartRefsPage(v);
+        else if (m_page == QLatin1String("chart-style"))
+            chartStylePage(v);
+        else if (m_page == QLatin1String("chart-color"))
+            chartColorPage(v);
         else if (m_page == QLatin1String("openin"))
             listPage(tr("Open pages in"),
                      {{QStringLiteral("side"), tr("Side peek")}, {QStringLiteral("center"), tr("Center peek")}, {QStringLiteral("full"), tr("Full page")}}, v.openIn,

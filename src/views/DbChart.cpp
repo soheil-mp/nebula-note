@@ -14,7 +14,9 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QHash>
 #include <QPainterPath>
+#include <QSvgGenerator>
 #include <QToolTip>
 #include <QtMath>
 
@@ -35,53 +37,137 @@ QString shortDateTime(const QDateTime &t)
     return en.toString(t.date(), thisYear ? QStringLiteral("MMM d") : QStringLiteral("MMM d, yyyy")) + QStringLiteral(" · ")
            + en.toString(t.time(), QStringLiteral("h:mm AP"));
 }
-constexpr double kChartH = 380;
 
-// Series colours: grays from bright to dim, like the rest of Nebula.
-QColor seriesColor(int i, int n)
+// Bar and line colours: grays by default (the rest of Nebula), or Notion's
+// palette, muted for the dark page.
+QColor paletteColor(const QString &name)
 {
-    const auto &c = Theme::colors();
-    if (n <= 1)
-        return c.mist;
-    const QColor stops[] = {c.starlight, c.mist, c.fog, c.dust, c.smoke, c.haze, c.moon};
-    return stops[i % 7];
+    static const QHash<QString, QColor> colors = {
+        {QStringLiteral("gray"), QColor(0x91, 0x91, 0x99)},   {QStringLiteral("brown"), QColor(0xA8, 0x80, 0x6A)},
+        {QStringLiteral("orange"), QColor(0xCF, 0x86, 0x48)}, {QStringLiteral("yellow"), QColor(0xCD, 0xAA, 0x4E)},
+        {QStringLiteral("green"), QColor(0x6E, 0xAD, 0x7C)},  {QStringLiteral("blue"), QColor(0x64, 0x96, 0xD6)},
+        {QStringLiteral("purple"), QColor(0x9B, 0x80, 0xCF)}, {QStringLiteral("pink"), QColor(0xC9, 0x74, 0xA6)},
+        {QStringLiteral("red"), QColor(0xD0, 0x6E, 0x66)},
+    };
+    return colors.value(name);
 }
 
-// A round step for the value axis.
-double niceStep(double max, int ticks)
+const QStringList &colorfulOrder()
 {
-    if (max <= 0)
+    static const QStringList order = {QStringLiteral("blue"),   QStringLiteral("green"), QStringLiteral("orange"),
+                                      QStringLiteral("purple"), QStringLiteral("pink"),  QStringLiteral("yellow"),
+                                      QStringLiteral("red"),    QStringLiteral("brown"), QStringLiteral("gray")};
+    return order;
+}
+
+// A round step for an axis: 1, 2, 2.5 or 5 times a power of ten.
+double niceStep(double span, int ticks)
+{
+    if (span <= 0 || ticks <= 0)
         return 1;
-    const double raw = max / ticks;
+    const double raw = span / ticks;
     const double mag = std::pow(10, std::floor(std::log10(raw)));
     const double norm = raw / mag;
     const double nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10;
     return nice * mag;
 }
 
-QString shortNumber(double v)
+// "1.5k" for axis ticks that would crowd each other.
+QString compactNumber(double v)
 {
+    const QLocale en(QLocale::English);
     if (std::abs(v) >= 1e6)
-        return QLocale(QLocale::English).toString(v / 1e6, 'f', v >= 1e7 ? 0 : 1) + QStringLiteral("M");
+        return en.toString(v / 1e6, 'f', std::abs(v) >= 1e7 ? 0 : 1) + QStringLiteral("M");
     if (std::abs(v) >= 1e4)
-        return QLocale(QLocale::English).toString(v / 1e3, 'f', 0) + QStringLiteral("k");
-    if (v == std::floor(v))
-        return QLocale(QLocale::English).toString(qint64(v));
-    return QLocale(QLocale::English).toString(v, 'f', 2);
+        return en.toString(v / 1e3, 'f', 0) + QStringLiteral("k");
+    return {};
+}
+
+double chartHeight(const QString &size, bool number)
+{
+    if (number)
+        return size == QLatin1String("small") ? 150 : size == QLatin1String("large") ? 280 : size == QLatin1String("xlarge") ? 340 : 210;
+    return size == QLatin1String("small") ? 260 : size == QLatin1String("large") ? 520 : size == QLatin1String("xlarge") ? 680 : 380;
+}
+
+// A dashed line for reference lines.
+QPen dashed(const QColor &c)
+{
+    QPen pen(c, 1);
+    pen.setDashPattern({4, 4});
+    return pen;
 }
 } // namespace
 
 ChartView::ChartView(QWidget *parent)
     : DbView(parent)
 {
+    setMouseTracking(true);
 }
 
 void ChartView::setContext(const ViewContext &ctx)
 {
     DbView::setContext(ctx);
     compute();
-    setFixedHeight(int(m_ctx.view.chartType == QLatin1String("number") ? 220 : kChartH));
+    double h = chartHeight(m_ctx.view.chartHeight, m_ctx.view.chartType == QLatin1String("number"));
+    if (!m_ctx.view.chartCaption.isEmpty())
+        h += 30;
+    setFixedHeight(int(h));
     update();
+}
+
+QString ChartView::formatValue(double v) const
+{
+    const int decimals = m_ctx.view.chartDecimals;
+    const QLocale en(QLocale::English);
+    if (decimals >= 0)
+        return en.toString(v, 'f', decimals);
+    // As needed: up to two decimals, no trailing zeros.
+    QString s = en.toString(v, 'f', 2);
+    if (s.contains(QLatin1Char('.'))) {
+        while (s.endsWith(QLatin1Char('0')))
+            s.chop(1);
+        if (s.endsWith(QLatin1Char('.')))
+            s.chop(1);
+    }
+    return s;
+}
+
+QString ChartView::formatTick(double v, double step) const
+{
+    const QString compact = compactNumber(v);
+    if (!compact.isEmpty())
+        return compact;
+    // As many decimals as the step needs.
+    int decimals = 0;
+    for (double st = step; decimals < 4 && std::abs(st - std::round(st)) > 1e-9; st *= 10)
+        ++decimals;
+    return QLocale(QLocale::English).toString(v, 'f', decimals);
+}
+
+QColor ChartView::colorFor(int series, int seriesCount, int point, int pointCount) const
+{
+    const auto &c = Theme::colors();
+    const QString scheme = m_ctx.view.chartColor;
+    // One series: bars take the colour; colorful gives each bar its own.
+    const bool perPoint = seriesCount <= 1 && pointCount > 0;
+    const int index = perPoint ? point : series;
+    const int count = perPoint ? pointCount : seriesCount;
+    if (scheme == QLatin1String("colorful"))
+        return paletteColor(colorfulOrder().value(index % colorfulOrder().size()));
+    const QColor base = paletteColor(scheme);
+    if (base.isValid()) {
+        if (seriesCount <= 1)
+            return base;
+        // Several series of one colour: steps from the colour toward the page.
+        const double t = seriesCount > 1 ? double(series) / (seriesCount) : 0;
+        return Theme::mix(base, c.basalt, t * 0.75);
+    }
+    // Grays, bright to dim.
+    if (count <= 1 || perPoint)
+        return c.mist;
+    const QColor stops[] = {c.starlight, c.mist, c.fog, c.dust, c.smoke, c.haze, c.moon};
+    return stops[index % 7];
 }
 
 double ChartView::yValue(const QList<int> &rows) const
@@ -100,15 +186,28 @@ double ChartView::yValue(const QList<int> &rows) const
     return v.isDouble() ? v.toDouble() : 0;
 }
 
+QString ChartView::valueName() const
+{
+    const QString y = m_ctx.view.chartY;
+    const Property *p = m_ctx.schema.prop(y.section(QLatin1Char(':'), 1));
+    if (y == QLatin1String("count") || !p)
+        return tr("Count");
+    return QStringLiteral("%1 (%2)").arg(p->name, calcName(y.section(QLatin1Char(':'), 0, 0)));
+}
+
+QString ChartView::categoryName() const
+{
+    const Property *x = m_ctx.schema.prop(m_ctx.view.chartX);
+    return x ? x->name : QString();
+}
+
 void ChartView::compute()
 {
     m_points.clear();
     m_series.clear();
     m_total = 0;
     const View &view = m_ctx.view;
-    const Property *yProp = m_ctx.schema.prop(view.chartY.section(QLatin1Char(':'), 1));
-    m_yLabel = view.chartY == QLatin1String("count") || !yProp ? tr("Count")
-                                                                : QStringLiteral("%1 · %2").arg(calcName(view.chartY.section(QLatin1Char(':'), 0, 0)), yProp->name);
+    m_yLabel = valueName();
     QList<int> all;
     for (int i = 0; i < m_ctx.rows.size(); ++i)
         all.append(i);
@@ -116,11 +215,30 @@ void ChartView::compute()
     const Property *x = m_ctx.schema.prop(view.chartX);
     if (!x || !canGroupBy(*x))
         return;
-    const QString mode = resultType(*x) == PropType::Date || x->type == PropType::Created || x->type == PropType::Edited ? QStringLiteral("month")
-                                                                                                                       : QString();
-    const QList<RowGroup> groupsX = groupRows(m_ctx.schema, *x, m_ctx.rows, mode, view.groupStep, false);
+    // The categories. By name: one per page, in the view's order (pages
+    // sharing a name share a bar, like Notion). Otherwise the property's groups.
+    QList<RowGroup> groupsX;
+    if (x->type == PropType::Title) {
+        QHash<QString, int> byName;
+        for (int i = 0; i < m_ctx.rows.size(); ++i) {
+            const QString name = titleOf(m_ctx.rows[i]);
+            auto it = byName.constFind(name);
+            if (it == byName.constEnd()) {
+                RowGroup g;
+                g.key = name;
+                g.label = name;
+                it = byName.insert(name, int(groupsX.size()));
+                groupsX.append(g);
+            }
+            groupsX[*it].rows.append(i);
+        }
+    } else {
+        const QString mode = resultType(*x) == PropType::Date || x->type == PropType::Created || x->type == PropType::Edited ? QStringLiteral("month")
+                                                                                                                           : QString();
+        groupsX = groupRows(m_ctx.schema, *x, m_ctx.rows, mode, view.groupStep, false);
+    }
     const Property *s = m_ctx.schema.prop(view.chartGroup);
-    if (s && (!canGroupBy(*s) || s == x))
+    if (s && (!canGroupBy(*s) || s == x || s->type == PropType::Title))
         s = nullptr;
     QList<RowGroup> seriesGroups;
     if (s) {
@@ -188,263 +306,520 @@ void ChartView::compute()
 
 void ChartView::paintEvent(QPaintEvent *)
 {
-    const auto &c = Theme::colors();
     QPainter p(this);
+    paintChart(p, QRectF(rect()));
+}
+
+bool ChartView::saveImage(const QString &path)
+{
+    const QSize size = this->size();
+    const QColor background = Theme::colors().basalt;
+    bool ok = false;
+    if (path.endsWith(QLatin1String(".svg"), Qt::CaseInsensitive)) {
+        QSvgGenerator svg;
+        svg.setFileName(path);
+        svg.setSize(size);
+        svg.setViewBox(QRect(QPoint(0, 0), size));
+        svg.setTitle(m_ctx.view.name);
+        QPainter p(&svg);
+        p.fillRect(QRect(QPoint(0, 0), size), background);
+        paintChart(p, QRectF(QPointF(0, 0), size));
+        ok = p.end();
+    } else {
+        // Twice the size on screen: sharp in documents and slides.
+        QImage image(size * 2, QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(2);
+        image.fill(background);
+        QPainter p(&image);
+        paintChart(p, QRectF(QPointF(0, 0), size));
+        p.end();
+        ok = image.save(path);
+    }
+    update(); // the hit areas follow the window again
+    return ok;
+}
+
+void ChartView::paintChart(QPainter &p, const QRectF &rect)
+{
+    const auto &c = Theme::colors();
     p.setRenderHint(QPainter::Antialiasing);
     const View &view = m_ctx.view;
-    const QRectF area(0, 0, width(), height());
-    Theme::paintCard(p, area.adjusted(1, 1, -1, -1), 12, QColor(0x17, 0x17, 0x1B));
+    QRectF area = rect.adjusted(4, 8, -4, -8);
+    if (!view.chartCaption.isEmpty()) {
+        p.setFont(Theme::uiFont(12.5));
+        p.setPen(c.fog);
+        p.drawText(QRectF(area.left(), area.bottom() - 22, area.width(), 22), Qt::AlignLeft | Qt::AlignVCenter,
+                   QFontMetricsF(p.font()).elidedText(view.chartCaption, Qt::ElideRight, area.width()));
+        area.setBottom(area.bottom() - 30);
+    }
     const QString type = view.chartType;
     if (type == QLatin1String("number")) {
-        p.setFont(Theme::uiFont(12.5, QFont::Medium));
+        p.setFont(Theme::uiFont(13, QFont::Medium));
         p.setPen(c.fog);
-        p.drawText(QRectF(24, 22, width() - 48, 20), Qt::AlignVCenter, m_yLabel.toUpper());
-        p.setFont(Theme::displayFont(64, QFont::DemiBold));
-        p.setPen(c.starlight);
-        p.drawText(QRectF(24, 50, width() - 48, 110), Qt::AlignVCenter, shortNumber(m_total));
+        p.drawText(QRectF(area.left() + 16, area.top() + 10, area.width() - 32, 22), Qt::AlignVCenter, m_yLabel);
+        const QColor tint = paletteColor(view.chartColor);
+        p.setFont(Theme::displayFont(qMin(72.0, area.height() * 0.36), QFont::DemiBold));
+        p.setPen(tint.isValid() ? tint : c.starlight);
+        p.drawText(QRectF(area.left() + 16, area.top() + 36, area.width() - 32, area.height() - 80), Qt::AlignVCenter, formatValue(m_total));
         p.setFont(Theme::uiFont(12.5));
         p.setPen(c.haze);
-        p.drawText(QRectF(24, 160, width() - 48, 24), Qt::AlignVCenter, tr("%n row(s)", nullptr, int(m_ctx.rows.size())));
+        p.drawText(QRectF(area.left() + 16, area.bottom() - 30, area.width() - 32, 24), Qt::AlignVCenter,
+                   tr("%n page(s)", nullptr, int(m_ctx.rows.size())));
         return;
     }
     if (m_points.isEmpty()) {
         QRectF dummy;
-        paintEmptyState(p, area.adjusted(0, 60, 0, 0),
-                        m_ctx.schema.prop(view.chartX) ? tr("Nothing to chart yet.") : tr("Choose a property for the X axis in the view settings."),
-                        QString(), &dummy);
+        paintEmptyState(p, area.adjusted(0, 40, 0, 0),
+                        m_ctx.schema.prop(view.chartX) ? tr("Nothing to chart yet.") : tr("Choose what the chart shows in the view settings."), QString(),
+                        &dummy);
         return;
     }
     const int n = int(m_series.size());
-    // Legend.
-    double lx = 24;
-    if (n > 1) {
+    // Legend (several series).
+    if (n > 1 && view.chartLegend) {
         p.setFont(Theme::uiFont(12));
+        double lx = area.left() + 12;
         for (int k = 0; k < n; ++k) {
-            p.setPen(Qt::NoPen);
-            p.setBrush(seriesColor(k, n));
-            p.drawRoundedRect(QRectF(lx, 20, 10, 10), 2, 2);
-            p.setPen(c.haze);
             const double w = QFontMetricsF(p.font()).horizontalAdvance(m_series[k]);
-            p.drawText(QRectF(lx + 16, 14, w + 4, 22), Qt::AlignVCenter, m_series[k]);
+            if (lx + w + 20 > area.right())
+                break;
+            p.setPen(Qt::NoPen);
+            p.setBrush(colorFor(k, n, 0, 0));
+            p.drawRoundedRect(QRectF(lx, area.top() + 6, 10, 10), 2, 2);
+            p.setPen(c.haze);
+            p.drawText(QRectF(lx + 16, area.top(), w + 4, 22), Qt::AlignVCenter, m_series[k]);
             lx += w + 34;
         }
+        area.setTop(area.top() + 30);
     }
     if (type == QLatin1String("donut")) {
-        const double R = qMin(height() - 80.0, width() * 0.4) / 2;
-        const QPointF center(qMin(width() * 0.33, R + 60), height() / 2.0 + 10);
-        double sum = 0;
-        QList<double> totals;
-        for (const Point &pt : m_points) {
-            double t = 0;
-            for (double v : pt.values)
-                t += v;
-            totals.append(t);
-            sum += t;
-        }
-        double angle = 90 * 16;
-        const QRectF box(center.x() - R, center.y() - R, 2 * R, 2 * R);
-        for (int i = 0; i < m_points.size(); ++i) {
-            const double span = sum > 0 ? -totals[i] / sum * 360 * 16 : 0;
-            QPainterPath slice;
-            slice.moveTo(center);
-            slice.arcTo(box, angle / 16.0, span / 16.0);
-            slice.closeSubpath();
-            QColor col = seriesColor(i, int(m_points.size()) + 1);
-            if (i == m_hover)
-                col = col.lighter(125);
-            p.setPen(QPen(QColor(0x17, 0x17, 0x1B), 2));
-            p.setBrush(col);
-            p.drawPath(slice);
-            m_points[i].hit = QRectF(); // donut hits are angular
-            angle += span;
-        }
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(0x17, 0x17, 0x1B));
-        p.drawEllipse(center, R * 0.6, R * 0.6);
-        p.setFont(Theme::displayFont(26, QFont::DemiBold));
-        p.setPen(c.starlight);
-        p.drawText(QRectF(center.x() - R, center.y() - 22, 2 * R, 30), Qt::AlignCenter, shortNumber(sum));
-        p.setFont(Theme::uiFont(11.5));
-        p.setPen(c.fog);
-        p.drawText(QRectF(center.x() - R, center.y() + 8, 2 * R, 18), Qt::AlignCenter, m_yLabel);
-        // Legend beside the donut.
-        double y = 40;
-        p.setFont(Theme::uiFont(12.5));
-        for (int i = 0; i < m_points.size() && y < height() - 24; ++i) {
-            const double x0 = center.x() + R + 40;
-            m_points[i].hit = QRectF(x0 - 6, y - 2, width() - x0 - 12, 24);
-            if (i == m_hover)
-                Theme::paintHover(p, m_points[i].hit, 1.0, 5);
-            p.setPen(Qt::NoPen);
-            p.setBrush(seriesColor(i, int(m_points.size()) + 1));
-            p.drawEllipse(QRectF(x0, y + 6, 9, 9));
-            p.setPen(c.moon);
-            p.drawText(QRectF(x0 + 18, y, width() - x0 - 120, 20), Qt::AlignVCenter, m_points[i].label);
-            p.setPen(c.fog);
-            const QString val = view.chartLabels ? QStringLiteral("%1  ·  %2%").arg(shortNumber(totals[i])).arg(sum > 0 ? qRound(totals[i] / sum * 100) : 0)
-                                                 : shortNumber(totals[i]);
-            p.drawText(QRectF(x0 + 18, y, width() - x0 - 36, 20), Qt::AlignVCenter | Qt::AlignRight, val);
-            y += 26;
-        }
+        paintDonut(p, area);
         return;
     }
-    // Axes charts.
-    double maxV = 0;
-    const bool stacked = type != QLatin1String("line");
+    paintAxes(p, area);
+}
+
+void ChartView::paintDonut(QPainter &p, const QRectF &area)
+{
+    const auto &c = Theme::colors();
+    const View &view = m_ctx.view;
+    QList<double> totals;
+    double sum = 0;
+    for (const Point &pt : m_points) {
+        double t = 0;
+        for (double v : pt.values)
+            t += v;
+        totals.append(t);
+        sum += t;
+    }
+    const int count = int(m_points.size());
+    const bool legend = view.chartLegend;
+    const double R = qMin(area.height() - 30, (legend ? area.width() * 0.45 : area.width()) - 20) / 2;
+    const QPointF center(legend ? area.left() + qMin(area.width() * 0.3, R + 50) : area.center().x(), area.center().y());
+    const QRectF box(center.x() - R, center.y() - R, 2 * R, 2 * R);
+    double angle = 90;
+    for (int i = 0; i < count; ++i) {
+        const double span = sum > 0 ? -totals[i] / sum * 360 : 0;
+        QPainterPath slice;
+        slice.moveTo(center);
+        slice.arcTo(box, angle, span);
+        slice.closeSubpath();
+        QColor col = colorFor(0, 1, i, count);
+        if (view.chartColor == QLatin1String("auto") || !paletteColor(view.chartColor).isValid()) {
+            // Grays from bright to dim around the ring.
+            const QColor stops[] = {c.starlight, c.mist, c.fog, c.dust, c.smoke, c.haze, c.moon};
+            if (view.chartColor != QLatin1String("colorful"))
+                col = stops[i % 7];
+        } else {
+            col = Theme::mix(paletteColor(view.chartColor), c.basalt, count > 1 ? 0.7 * i / count : 0);
+        }
+        if (i == m_hover)
+            col = col.lighter(118);
+        p.setPen(QPen(c.basalt, 2));
+        p.setBrush(col);
+        p.drawPath(slice);
+        // Data labels: the share, on slices big enough to hold it.
+        if (view.chartLabels && sum > 0 && totals[i] / sum >= 0.06) {
+            const double mid = qDegreesToRadians(angle + span / 2);
+            const QPointF at(center.x() + std::cos(mid) * R * 0.8, center.y() - std::sin(mid) * R * 0.8);
+            p.setFont(Theme::uiFont(11, QFont::DemiBold));
+            p.setPen(col.lightness() > 140 ? c.basalt : c.starlight);
+            p.drawText(QRectF(at.x() - 30, at.y() - 9, 60, 18), Qt::AlignCenter, QStringLiteral("%1%").arg(qRound(totals[i] / sum * 100)));
+        }
+        m_points[i].hit = QRectF(); // slices are found by angle
+        angle += span;
+    }
+    p.setPen(Qt::NoPen);
+    p.setBrush(c.basalt);
+    p.drawEllipse(center, R * 0.62, R * 0.62);
+    p.setFont(Theme::displayFont(qMax(16.0, R * 0.22), QFont::DemiBold));
+    p.setPen(c.starlight);
+    p.drawText(QRectF(center.x() - R, center.y() - R * 0.22, 2 * R, R * 0.3), Qt::AlignCenter, formatValue(sum));
+    p.setFont(Theme::uiFont(11.5));
+    p.setPen(c.fog);
+    p.drawText(QRectF(center.x() - R * 0.6, center.y() + R * 0.1, R * 1.2, 18), Qt::AlignCenter,
+               QFontMetricsF(p.font()).elidedText(m_yLabel, Qt::ElideRight, R * 1.2));
+    m_donutCenter = center;
+    m_donutRadius = R;
+    if (!legend)
+        return;
+    double y = qMax(area.top(), center.y() - count * 13.0);
+    p.setFont(Theme::uiFont(12.5));
+    const double x0 = center.x() + R + 40;
+    for (int i = 0; i < count && y < area.bottom() - 20; ++i) {
+        m_points[i].hit = QRectF(x0 - 6, y - 2, area.right() - x0, 24);
+        if (i == m_hover)
+            Theme::paintHover(p, m_points[i].hit, 1.0, 5);
+        QColor col = colorFor(0, 1, i, count);
+        if (view.chartColor == QLatin1String("auto") || !paletteColor(view.chartColor).isValid()) {
+            const QColor stops[] = {c.starlight, c.mist, c.fog, c.dust, c.smoke, c.haze, c.moon};
+            if (view.chartColor != QLatin1String("colorful"))
+                col = stops[i % 7];
+        } else {
+            col = Theme::mix(paletteColor(view.chartColor), c.basalt, count > 1 ? 0.7 * i / count : 0);
+        }
+        p.setPen(Qt::NoPen);
+        p.setBrush(col);
+        p.drawEllipse(QRectF(x0, y + 6, 9, 9));
+        p.setPen(c.moon);
+        p.drawText(QRectF(x0 + 18, y, area.right() - x0 - 130, 20), Qt::AlignVCenter,
+                   QFontMetricsF(p.font()).elidedText(m_points[i].label, Qt::ElideRight, area.right() - x0 - 130));
+        p.setPen(c.fog);
+        const QString val = QStringLiteral("%1  ·  %2%").arg(formatValue(totals[i])).arg(sum > 0 ? qRound(totals[i] / sum * 100) : 0);
+        p.drawText(QRectF(x0 + 18, y, area.right() - x0 - 30, 20), Qt::AlignVCenter | Qt::AlignRight, val);
+        y += 26;
+    }
+}
+
+void ChartView::paintAxes(QPainter &p, const QRectF &area)
+{
+    const auto &c = Theme::colors();
+    const View &view = m_ctx.view;
+    const QString type = view.chartType;
+    const bool horizontal = type == QLatin1String("hbar");
+    const bool line = type == QLatin1String("line");
+    const bool stacked = !line;
+    const int n = int(m_series.size());
+    const int count = int(m_points.size());
+    const QFont tickFont = Theme::uiFont(11);
+    const QFont labelFont = Theme::uiFont(11.5);
+    const QFontMetricsF tickFm(tickFont), labelFm(labelFont);
+    const bool xName = view.chartAxisNames == QLatin1String("x") || view.chartAxisNames == QLatin1String("both");
+    const bool yName = view.chartAxisNames == QLatin1String("y") || view.chartAxisNames == QLatin1String("both");
+    // Horizontal bars: categories down the left, values along the bottom.
+    // The "X axis" of the settings is whichever runs along the bottom.
+    const QString bottomName = horizontal ? m_yLabel : categoryName();
+    const QString leftName = horizontal ? categoryName() : m_yLabel;
+
+    // The value range.
+    double minV = 0, maxV = 0;
     for (const Point &pt : m_points) {
         double t = 0;
         for (double v : pt.values) {
             t += v;
+            minV = qMin(minV, v);
             maxV = qMax(maxV, v);
         }
         if (stacked)
             maxV = qMax(maxV, t);
     }
-    const double step = niceStep(maxV, 4);
-    const double top = std::max(step * std::ceil(maxV / step), step);
-    const bool horizontal = type == QLatin1String("hbar");
-    p.setFont(Theme::uiFont(11.5));
-    double labelW = 0;
-    if (horizontal)
+    for (const View::RefLine &l : view.chartRefLines) {
+        minV = qMin(minV, l.value);
+        maxV = qMax(maxV, l.value);
+    }
+
+    // Room around the plot.
+    QRectF plot = area;
+    plot.setLeft(area.left() + 8 + (yName ? 22 : 0));
+    plot.setBottom(area.bottom() - 22 - (xName ? 22 : 0));
+    plot.setRight(area.right() - 12);
+    plot.setTop(area.top() + 6);
+    // Reference line labels: above the plot, written up the line (bars) or
+    // at the line's end (columns and lines).
+    double refLabelW = 0;
+    for (const View::RefLine &l : view.chartRefLines)
+        refLabelW = qMax(refLabelW, tickFm.horizontalAdvance(l.label));
+    const double refLabelMax = 120;
+    if (horizontal && refLabelW > 0)
+        plot.setTop(plot.top() + qMin(refLabelW, refLabelMax) + 8);
+    if (!horizontal)
+        plot.setTop(plot.top() + 16); // value labels over the tallest column
+    double catLabelW = 0;
+    if (horizontal) {
         for (const Point &pt : m_points)
-            labelW = qMax(labelW, QFontMetricsF(p.font()).horizontalAdvance(pt.label));
-    labelW = qMin(labelW + 8, 180.0);
-    const QRectF plot = horizontal ? QRectF(24 + labelW, 50, width() - 48 - labelW - 30, height() - 90) : QRectF(64, 50, width() - 90, height() - 104);
-    // Grid and value labels.
-    p.setFont(Theme::uiFont(11));
-    for (double v = 0; v <= top + 1e-9; v += step) {
-        const double t = v / top;
-        p.setPen(QPen(v == 0 ? c.ash : c.hairline, 1));
-        if (horizontal) {
-            const double x = plot.left() + t * plot.width();
-            p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
-            p.setPen(c.fog);
-            p.drawText(QRectF(x - 40, plot.bottom() + 6, 80, 16), Qt::AlignCenter, shortNumber(v));
-        } else {
-            const double y = plot.bottom() - t * plot.height();
-            p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
-            p.setPen(c.fog);
-            p.drawText(QRectF(4, y - 8, plot.left() - 12, 16), Qt::AlignVCenter | Qt::AlignRight, shortNumber(v));
+            catLabelW = qMax(catLabelW, labelFm.horizontalAdvance(pt.label));
+        catLabelW = qMin(catLabelW + 12, area.width() * 0.3);
+        plot.setLeft(plot.left() + catLabelW);
+        // Room for the value at the end of the longest bar.
+        if (view.chartLabels)
+            plot.setRight(plot.right() - qMax(28.0, tickFm.horizontalAdvance(formatValue(maxV)) + 10));
+    }
+
+    double lo, hi;
+    const double length = horizontal ? plot.width() : plot.height();
+    const int ticks = qMax(2, int(length / (horizontal ? 44 : 40)));
+    double step;
+    if (view.chartAutoRange) {
+        lo = minV < 0 ? minV : 0;
+        hi = maxV > lo ? maxV : lo + 1;
+        step = niceStep(hi - lo, ticks);
+        lo = std::floor(lo / step) * step;
+        hi = std::max(lo + step, std::ceil(hi / step - 1e-9) * step);
+    } else {
+        lo = view.chartMin;
+        hi = view.chartMax > lo ? view.chartMax : lo + 1;
+        step = niceStep(hi - lo, ticks);
+    }
+    if (!horizontal) {
+        // The tick labels' width decides the left margin.
+        double w = 0;
+        for (double v = std::ceil(lo / step) * step; v <= hi + 1e-9; v += step)
+            w = qMax(w, tickFm.horizontalAdvance(formatTick(v, step)));
+        plot.setLeft(plot.left() + w + 10);
+    }
+    auto toPos = [&](double v) {
+        const double t = (v - lo) / (hi - lo);
+        return horizontal ? plot.left() + t * plot.width() : plot.bottom() - t * plot.height();
+    };
+
+    // Grid lines and value ticks.
+    const QString grid = view.chartGrid;
+    const bool valueGrid = grid == QLatin1String("auto") || grid == QLatin1String("both") || (horizontal ? grid == QLatin1String("vertical") : grid == QLatin1String("horizontal"));
+    const bool categoryGrid = grid == QLatin1String("both") || (horizontal ? grid == QLatin1String("horizontal") : grid == QLatin1String("vertical"));
+    p.setFont(tickFont);
+    const int every = horizontal ? qMax(1, int(std::ceil(tickFm.horizontalAdvance(formatTick(hi, step)) + 12) / (plot.width() / ((hi - lo) / step)))) : 1;
+    int tickIndex = 0;
+    for (double v = std::ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step, ++tickIndex) {
+        const double pos = toPos(v);
+        const bool zero = std::abs(v) < step * 1e-6;
+        if (valueGrid || zero) {
+            p.setPen(QPen(zero ? c.ash : c.hairline, 1));
+            if (horizontal)
+                p.drawLine(QPointF(pos, plot.top()), QPointF(pos, plot.bottom()));
+            else
+                p.drawLine(QPointF(plot.left(), pos), QPointF(plot.right(), pos));
+        }
+        if (tickIndex % every)
+            continue;
+        p.setPen(c.fog);
+        if (horizontal)
+            p.drawText(QRectF(pos - 40, plot.bottom() + 6, 80, 16), Qt::AlignHCenter | Qt::AlignTop, formatTick(v, step));
+        else
+            p.drawText(QRectF(area.left(), pos - 8, plot.left() - area.left() - 8, 16), Qt::AlignVCenter | Qt::AlignRight, formatTick(v, step));
+    }
+    const double band = (horizontal ? plot.height() : plot.width()) / count;
+    if (categoryGrid) {
+        p.setPen(QPen(c.hairline, 1));
+        for (int i = 0; i <= count; ++i) {
+            const double pos = (horizontal ? plot.top() : plot.left()) + band * i;
+            if (horizontal)
+                p.drawLine(QPointF(plot.left(), pos), QPointF(plot.right(), pos));
+            else
+                p.drawLine(QPointF(pos, plot.top()), QPointF(pos, plot.bottom()));
         }
     }
-    const int count = int(m_points.size());
-    const double band = (horizontal ? plot.height() : plot.width()) / count;
-    const double barW = qMin(band * 0.62, horizontal ? 28.0 : 64.0);
-    if (type == QLatin1String("line")) {
+
+    // The data, clipped to the plot (a custom range can cut bars short).
+    QList<QPair<QPointF, QString>> lineLabels; // drawn after, outside the clip
+    p.save();
+    p.setClipRect(plot.adjusted(-1, -1, horizontal ? 1 : 1, 1));
+    if (line) {
         for (int k = 0; k < n; ++k) {
-            QPainterPath path, fill;
-            for (int i = 0; i < count; ++i) {
-                const double x = plot.left() + band * (i + 0.5);
-                const double y = plot.bottom() - m_points[i].values.value(k) / top * plot.height();
-                if (i == 0) {
-                    path.moveTo(x, y);
-                    fill.moveTo(x, plot.bottom());
-                    fill.lineTo(x, y);
+            QList<QPointF> pts;
+            for (int i = 0; i < count; ++i)
+                pts.append(QPointF(plot.left() + band * (i + 0.5), toPos(m_points[i].values.value(k))));
+            QPainterPath path;
+            path.moveTo(pts.first());
+            for (int i = 1; i < pts.size(); ++i) {
+                if (view.chartSmooth) {
+                    // Catmull-Rom through the points, as cubic curves.
+                    const QPointF p0 = pts[qMax(0, i - 2)], p1 = pts[i - 1], p2 = pts[i], p3 = pts[qMin(int(pts.size()) - 1, i + 1)];
+                    path.cubicTo(p1 + (p2 - p0) / 6, p2 - (p3 - p1) / 6, p2);
                 } else {
-                    path.lineTo(x, y);
-                    fill.lineTo(x, y);
-                }
-                if (i == count - 1) {
-                    fill.lineTo(x, plot.bottom());
-                    fill.closeSubpath();
+                    path.lineTo(pts[i]);
                 }
             }
-            QColor col = seriesColor(k, n);
-            if (n == 1) {
-                QColor wash = col;
-                wash.setAlpha(26);
+            const QColor col = colorFor(k, n, -1, 0);
+            if (view.chartGradient && n <= 3) {
+                QPainterPath fill = path;
+                fill.lineTo(pts.last().x(), toPos(qMax(lo, 0.0)));
+                fill.lineTo(pts.first().x(), toPos(qMax(lo, 0.0)));
+                fill.closeSubpath();
+                QLinearGradient g(QPointF(0, plot.top()), QPointF(0, plot.bottom()));
+                QColor a = col, b = col;
+                a.setAlpha(n == 1 ? 70 : 40);
+                b.setAlpha(0);
+                g.setColorAt(0, a);
+                g.setColorAt(1, b);
                 p.setPen(Qt::NoPen);
-                p.setBrush(wash);
+                p.setBrush(g);
                 p.drawPath(fill);
             }
-            p.setPen(QPen(col, 2));
+            p.setPen(QPen(col, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
             p.setBrush(Qt::NoBrush);
             p.drawPath(path);
             for (int i = 0; i < count; ++i) {
-                const double x = plot.left() + band * (i + 0.5);
-                const double v = m_points[i].values.value(k);
-                const double y = plot.bottom() - v / top * plot.height();
-                p.setPen(QPen(QColor(0x17, 0x17, 0x1B), 2));
-                p.setBrush(col);
-                p.drawEllipse(QPointF(x, y), i == m_hover ? 5 : 3.5, i == m_hover ? 5 : 3.5);
-                if (view.chartLabels && n == 1 && count <= 24) {
-                    p.setFont(Theme::uiFont(11, QFont::Medium));
-                    p.setPen(c.haze);
-                    p.drawText(QRectF(x - 40, y - 22, 80, 16), Qt::AlignCenter, shortNumber(v));
+                const bool hot = i == m_hover;
+                if (view.chartDots || hot) {
+                    p.setPen(QPen(c.basalt, 2));
+                    p.setBrush(col);
+                    p.drawEllipse(pts[i], hot ? 5 : 3.5, hot ? 5 : 3.5);
                 }
+                if (view.chartLabels && n == 1 && count <= 30)
+                    lineLabels.append({pts[i], formatValue(m_points[i].values.value(k))});
             }
         }
         for (int i = 0; i < count; ++i)
             m_points[i].hit = QRectF(plot.left() + band * i, plot.top(), band, plot.height());
     } else {
+        const double barW = horizontal ? qBound(4.0, band * 0.4, 12.0) : qBound(4.0, band * 0.6, 56.0);
         for (int i = 0; i < count; ++i) {
             const Point &pt = m_points[i];
             double acc = 0;
             for (int k = 0; k < pt.values.size(); ++k) {
                 const double v = pt.values[k];
-                if (v <= 0)
+                if (v == 0)
                     continue;
-                QColor col = seriesColor(k, n);
+                QColor col = colorFor(k, n, i, count);
                 if (i == m_hover)
                     col = col.lighter(118);
-                p.setPen(Qt::NoPen);
-                p.setBrush(col);
+                const double from = toPos(acc), to = toPos(acc + v);
                 QRectF r;
                 if (horizontal) {
                     const double y = plot.top() + band * i + (band - barW) / 2;
-                    r = QRectF(plot.left() + acc / top * plot.width(), y, v / top * plot.width(), barW);
+                    r = QRectF(QPointF(qMin(from, to), y), QPointF(qMax(from, to), y + barW));
                 } else {
                     const double x = plot.left() + band * i + (band - barW) / 2;
-                    const double h = v / top * plot.height();
-                    r = QRectF(x, plot.bottom() - acc / top * plot.height() - h, barW, h);
+                    r = QRectF(QPointF(x, qMin(from, to)), QPointF(x + barW, qMax(from, to)));
                 }
-                p.drawRoundedRect(r, 3, 3);
+                p.setPen(Qt::NoPen);
+                p.setBrush(col);
+                p.drawRoundedRect(r, qMin(3.0, barW / 3), qMin(3.0, barW / 3));
                 acc += v;
             }
-            if (view.chartLabels && acc > 0) {
-                p.setFont(Theme::uiFont(11, QFont::Medium));
-                p.setPen(c.haze);
-                if (horizontal) {
-                    const double y = plot.top() + band * i;
-                    p.drawText(QRectF(plot.left() + acc / top * plot.width() + 6, y, 80, band), Qt::AlignVCenter, shortNumber(acc));
-                } else {
-                    const double x = plot.left() + band * i;
-                    p.drawText(QRectF(x, plot.bottom() - acc / top * plot.height() - 20, band, 16), Qt::AlignCenter, shortNumber(acc));
-                }
-            }
-            m_points[i].hit = horizontal ? QRectF(plot.left() - labelW, plot.top() + band * i, plot.width() + labelW, band)
+            m_points[i].hit = horizontal ? QRectF(area.left(), plot.top() + band * i, plot.right() - area.left(), band)
                                          : QRectF(plot.left() + band * i, plot.top(), band, plot.height());
         }
     }
+    p.restore();
+    p.setFont(Theme::uiFont(11, QFont::Medium));
+    p.setPen(c.haze);
+    for (const auto &[at, text] : lineLabels)
+        p.drawText(QRectF(at.x() - 40, at.y() - 22, 80, 16), Qt::AlignCenter, text);
+
+    // Values at the end of each bar or column.
+    if (!line && view.chartLabels) {
+        p.setFont(Theme::uiFont(11, QFont::Medium));
+        for (int i = 0; i < count; ++i) {
+            double acc = 0;
+            for (double v : m_points[i].values)
+                acc += v;
+            if (acc == 0 && view.chartHideEmpty)
+                continue;
+            p.setPen(i == m_hover ? c.moon : c.haze);
+            const double end = toPos(qBound(lo, acc, hi));
+            if (horizontal)
+                p.drawText(QRectF(end + 6, plot.top() + band * i, 80, band), Qt::AlignVCenter | Qt::AlignLeft, formatValue(acc));
+            else
+                p.drawText(QRectF(plot.left() + band * i - 10, end - 18, band + 20, 16), Qt::AlignCenter, formatValue(acc));
+        }
+    }
+
+    // Reference lines, dashed, with their labels.
+    for (const View::RefLine &l : view.chartRefLines) {
+        if (l.value < lo || l.value > hi)
+            continue;
+        const double pos = toPos(l.value);
+        p.setPen(dashed(Theme::withAlpha(c.mist, 0.7)));
+        if (horizontal)
+            p.drawLine(QPointF(pos, plot.top() - 2), QPointF(pos, plot.bottom()));
+        else
+            p.drawLine(QPointF(plot.left(), pos), QPointF(plot.right(), pos));
+        if (l.label.isEmpty())
+            continue;
+        p.setFont(tickFont);
+        p.setPen(c.haze);
+        if (horizontal) {
+            // Written up the line, above the plot.
+            p.save();
+            p.translate(pos + 4, plot.top() - 6);
+            p.rotate(-90);
+            p.drawText(QRectF(0, -tickFm.ascent(), refLabelMax, tickFm.height()), Qt::AlignLeft | Qt::AlignVCenter,
+                       tickFm.elidedText(l.label, Qt::ElideRight, refLabelMax));
+            p.restore();
+        } else {
+            const double w = tickFm.horizontalAdvance(l.label);
+            p.drawText(QRectF(plot.right() - w - 4, pos - 17, w + 4, 15), Qt::AlignRight | Qt::AlignVCenter, l.label);
+        }
+    }
+
     // Category labels.
-    p.setFont(Theme::uiFont(11.5));
+    p.setFont(labelFont);
     for (int i = 0; i < count; ++i) {
         p.setPen(i == m_hover ? c.moon : c.fog);
         if (horizontal) {
-            p.drawText(QRectF(20, plot.top() + band * i, labelW - 4, band), Qt::AlignVCenter | Qt::AlignRight,
-                       QFontMetricsF(p.font()).elidedText(m_points[i].label, Qt::ElideRight, labelW - 4));
+            p.drawText(QRectF(plot.left() - catLabelW - 2, plot.top() + band * i, catLabelW - 8, band), Qt::AlignVCenter | Qt::AlignRight,
+                       labelFm.elidedText(m_points[i].label, Qt::ElideRight, catLabelW - 8));
         } else {
             // Skip labels when they would overlap.
-            const int every = qMax(1, int(std::ceil(60.0 / band)));
-            if (i % every)
+            const int skip = qMax(1, int(std::ceil(60.0 / band)));
+            if (i % skip)
                 continue;
-            p.drawText(QRectF(plot.left() + band * i - 10, plot.bottom() + 8, band * every + 20, 18), Qt::AlignHCenter | Qt::AlignTop,
-                       QFontMetricsF(p.font()).elidedText(m_points[i].label, Qt::ElideRight, band * every + 16));
+            p.drawText(QRectF(plot.left() + band * i - 10, plot.bottom() + 6, band * skip + 20, 18), Qt::AlignHCenter | Qt::AlignTop,
+                       labelFm.elidedText(m_points[i].label, Qt::ElideRight, band * skip + 16));
         }
     }
+
+    // Axis names.
     p.setFont(Theme::uiFont(11.5, QFont::Medium));
-    p.setPen(c.dust);
-    if (!horizontal)
-        p.drawText(QRectF(plot.left(), height() - 26, plot.width(), 18), Qt::AlignCenter,
-                   m_ctx.schema.prop(view.chartX) ? m_ctx.schema.prop(view.chartX)->name : QString());
+    p.setPen(c.fog);
+    if (xName && !bottomName.isEmpty())
+        p.drawText(QRectF(plot.left(), area.bottom() - 20, plot.width(), 18), Qt::AlignCenter, bottomName);
+    if (yName && !leftName.isEmpty()) {
+        p.save();
+        p.translate(area.left() + 12, plot.center().y());
+        p.rotate(-90);
+        p.drawText(QRectF(-plot.height() / 2, -9, plot.height(), 18), Qt::AlignCenter, leftName);
+        p.restore();
+    }
+}
+
+int ChartView::pointAt(const QPointF &pos) const
+{
+    if (m_ctx.view.chartType == QLatin1String("donut") && m_donutRadius > 0) {
+        const QPointF d = pos - m_donutCenter;
+        const double r = std::hypot(d.x(), d.y());
+        if (r >= m_donutRadius * 0.62 && r <= m_donutRadius) {
+            double sum = 0;
+            QList<double> totals;
+            for (const Point &pt : m_points) {
+                double t = 0;
+                for (double v : pt.values)
+                    t += v;
+                totals.append(t);
+                sum += t;
+            }
+            // Angle from 12 o'clock, clockwise.
+            double a = qRadiansToDegrees(std::atan2(d.x(), -d.y()));
+            if (a < 0)
+                a += 360;
+            double acc = 0;
+            for (int i = 0; i < totals.size() && sum > 0; ++i) {
+                acc += totals[i] / sum * 360;
+                if (a <= acc)
+                    return i;
+            }
+        }
+    }
+    for (int i = 0; i < m_points.size(); ++i)
+        if (m_points[i].hit.contains(pos))
+            return i;
+    return -1;
 }
 
 void ChartView::mouseMoveEvent(QMouseEvent *e)
 {
-    int hover = -1;
-    for (int i = 0; i < m_points.size(); ++i)
-        if (m_points[i].hit.contains(e->position()))
-            hover = i;
+    const int hover = pointAt(e->position());
     if (hover != m_hover) {
         m_hover = hover;
         update();
@@ -453,7 +828,7 @@ void ChartView::mouseMoveEvent(QMouseEvent *e)
         const Point &pt = m_points[hover];
         QStringList lines{QStringLiteral("<b>%1</b>").arg(pt.label.toHtmlEscaped())};
         for (int k = 0; k < pt.values.size(); ++k)
-            lines.append(QStringLiteral("%1: %2").arg(m_series.value(k).toHtmlEscaped(), shortNumber(pt.values[k])));
+            lines.append(QStringLiteral("%1: %2").arg(m_series.value(k).toHtmlEscaped(), formatValue(pt.values[k])));
         QToolTip::showText(e->globalPosition().toPoint(), lines.join(QStringLiteral("<br>")), this);
         setCursor(Qt::PointingHandCursor);
     } else {
@@ -466,21 +841,27 @@ void ChartView::mousePressEvent(QMouseEvent *e)
 {
     if (e->button() != Qt::LeftButton || m_hover < 0)
         return;
-    // The rows behind a bar or slice.
+    // The pages behind a bar or slice: one opens, several are listed.
     const Point &pt = m_points[m_hover];
+    QStringList ids;
+    for (const QStringList &list : pt.rows)
+        for (const QString &id : list)
+            if (!ids.contains(id))
+                ids.append(id);
+    if (ids.size() == 1) {
+        emit openRow(ids.first());
+        return;
+    }
     QMenu *menu = Theme::makeMenu(this);
     Theme::addMenuSection(menu, pt.label);
-    int n = 0;
     Workspace *ws = Workspace::instance();
-    for (const QStringList &ids : pt.rows)
-        for (const QString &id : ids) {
-            if (++n > 30)
-                break;
-            const PageMeta *m = ws->page(id);
-            menu->addAction(Icons::icon(QStringLiteral("page")), m && !m->title.isEmpty() ? m->title : tr("Untitled"), this, [this, id] { emit openRow(id); });
-        }
-    if (n == 0)
-        menu->addAction(tr("No rows"))->setEnabled(false);
+    for (int i = 0; i < ids.size() && i < 30; ++i) {
+        const QString id = ids[i];
+        const PageMeta *m = ws->page(id);
+        menu->addAction(Icons::icon(QStringLiteral("page")), m && !m->title.isEmpty() ? m->title : tr("Untitled"), this, [this, id] { emit openRow(id); });
+    }
+    if (ids.isEmpty())
+        menu->addAction(tr("No pages"))->setEnabled(false);
     menu->popup(e->globalPosition().toPoint());
 }
 

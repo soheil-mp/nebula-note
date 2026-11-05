@@ -133,13 +133,30 @@ Schema readingSchema()
                prop(QStringLiteral("genre"), tr("Genre"), PropType::MultiSelect,
                     {opt(QStringLiteral("scifi"), tr("Science fiction"), 7), opt(QStringLiteral("science"), tr("Science"), 3),
                      opt(QStringLiteral("classic"), tr("Classic"), 9), opt(QStringLiteral("essay"), tr("Essays"), 1)}),
-               prop(QStringLiteral("finished"), tr("Finished on"), PropType::Date)};
+               prop(QStringLiteral("finished"), tr("Finished on"), PropType::Date),
+               prop(QStringLiteral("pages"), tr("Pages"), PropType::Number), prop(QStringLiteral("read"), tr("Pages read"), PropType::Number)};
+    Property progress = prop(QStringLiteral("progress"), tr("Progress"), PropType::Formula);
+    progress.formula = QStringLiteral("if(empty(prop(\"Pages\")), 0, round(prop(\"Pages read\") / prop(\"Pages\") * 100))");
+    progress.formulaType = QStringLiteral("number");
+    s.props.append(progress);
     View gallery = Schema::makeView(s, ViewType::Gallery, tr("Shelf"));
-    gallery.hidden = {QStringLiteral("finished"), QStringLiteral("genre")};
+    gallery.hidden = {QStringLiteral("finished"), QStringLiteral("genre"), QStringLiteral("pages"), QStringLiteral("read"), QStringLiteral("progress")};
     View table = Schema::makeView(s, ViewType::Table, tr("All books"));
     View board = Schema::makeView(s, ViewType::Board, tr("By status"));
     board.groupBy = QStringLiteral("status");
-    s.views = {gallery, table, board};
+    board.hidden = {QStringLiteral("pages"), QStringLiteral("read"), QStringLiteral("progress")};
+    // One bar per book, how far along it is, with milestones.
+    View chart = Schema::makeView(s, ViewType::Chart, tr("Progress"));
+    chart.chartType = QStringLiteral("hbar");
+    chart.chartX = QStringLiteral("title");
+    chart.chartY = QStringLiteral("avg:progress");
+    chart.chartAutoRange = false;
+    chart.chartMin = 0;
+    chart.chartMax = 100;
+    chart.chartRefLines = {{25, tr("Quarter")}, {50, tr("Half")}, {75, tr("Three quarters")}, {100, tr("Done")}};
+    chart.chartColor = QStringLiteral("green");
+    chart.chartSort = QStringLiteral("ydesc");
+    s.views = {gallery, table, board, chart};
     return s;
 }
 
@@ -313,18 +330,20 @@ QString createSampleWorkspace(Workspace &ws)
             QStringList genre;
             QString cover;
             int finished;
+            int pages, read;
         };
         const QList<R> rs = {
-            {QStringLiteral("Cosmos"), QStringLiteral("Carl Sagan"), QStringLiteral("done"), QStringLiteral("r5"), {QStringLiteral("science")}, QStringLiteral("cosmos:galaxy:9"), -40},
-            {QStringLiteral("The Three-Body Problem"), QStringLiteral("Cixin Liu"), QStringLiteral("doing"), QString(), {QStringLiteral("scifi")}, QStringLiteral("cosmos:eclipse:31"), 0},
-            {QStringLiteral("Project Hail Mary"), QStringLiteral("Andy Weir"), QStringLiteral("done"), QStringLiteral("r4"), {QStringLiteral("scifi")}, QStringLiteral("cosmos:comet:17"), -12},
-            {QStringLiteral("A Brief History of Time"), QStringLiteral("Stephen Hawking"), QStringLiteral("todo"), QString(), {QStringLiteral("science"), QStringLiteral("classic")}, QStringLiteral("cosmos:deepfield:12"), 0},
-            {QStringLiteral("The Left Hand of Darkness"), QStringLiteral("Ursula K. Le Guin"), QStringLiteral("todo"), QString(), {QStringLiteral("scifi"), QStringLiteral("classic")}, QStringLiteral("cosmos:aurora:8"), 0},
-            {QStringLiteral("Pale Blue Dot"), QStringLiteral("Carl Sagan"), QStringLiteral("done"), QStringLiteral("r5"), {QStringLiteral("essay"), QStringLiteral("science")}, QStringLiteral("cosmos:horizon:64"), -80},
+            {QStringLiteral("Cosmos"), QStringLiteral("Carl Sagan"), QStringLiteral("done"), QStringLiteral("r5"), {QStringLiteral("science")}, QStringLiteral("cosmos:galaxy:9"), -40, 365, 365},
+            {QStringLiteral("The Three-Body Problem"), QStringLiteral("Cixin Liu"), QStringLiteral("doing"), QString(), {QStringLiteral("scifi")}, QStringLiteral("cosmos:eclipse:31"), 0, 400, 236},
+            {QStringLiteral("Project Hail Mary"), QStringLiteral("Andy Weir"), QStringLiteral("done"), QStringLiteral("r4"), {QStringLiteral("scifi")}, QStringLiteral("cosmos:comet:17"), -12, 476, 476},
+            {QStringLiteral("A Brief History of Time"), QStringLiteral("Stephen Hawking"), QStringLiteral("doing"), QString(), {QStringLiteral("science"), QStringLiteral("classic")}, QStringLiteral("cosmos:deepfield:12"), 0, 212, 64},
+            {QStringLiteral("The Left Hand of Darkness"), QStringLiteral("Ursula K. Le Guin"), QStringLiteral("todo"), QString(), {QStringLiteral("scifi"), QStringLiteral("classic")}, QStringLiteral("cosmos:aurora:8"), 0, 304, 18},
+            {QStringLiteral("Pale Blue Dot"), QStringLiteral("Carl Sagan"), QStringLiteral("done"), QStringLiteral("r5"), {QStringLiteral("essay"), QStringLiteral("science")}, QStringLiteral("cosmos:horizon:64"), -80, 386, 386},
         };
         for (const R &r : rs) {
             QJsonObject props{{QStringLiteral("author"), r.author}, {QStringLiteral("status"), r.status},
-                              {QStringLiteral("genre"), QJsonArray::fromStringList(r.genre)}};
+                              {QStringLiteral("genre"), QJsonArray::fromStringList(r.genre)},
+                              {QStringLiteral("pages"), r.pages}, {QStringLiteral("read"), r.read}};
             if (!r.rating.isEmpty())
                 props.insert(QStringLiteral("rating"), r.rating);
             if (r.finished)

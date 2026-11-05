@@ -19,13 +19,16 @@
 #include <QBuffer>
 #include <QCheckBox>
 #include <QDirIterator>
+#include <QFile>
 #include <QFontDatabase>
+#include <QImage>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
 #include <QScrollArea>
 #include <QSet>
+#include <QSignalSpy>
 #include <QPainter>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -614,6 +617,128 @@ private slots:
             setView([type](View &v) { v.chartType = QString::fromLatin1(type); });
             QVERIFY(!active<ChartView>()->grab().isNull());
         }
+    }
+
+    // Like Notion's chart in a progress tracker: a bar per page, the average
+    // of a number, a fixed range, labelled reference lines, a colour.
+    void chartsLikeNotions()
+    {
+        resetView(ViewType::Chart);
+        setView([](View &v) {
+            v.chartType = QStringLiteral("hbar");
+            v.chartX = QStringLiteral("title");
+            v.chartY = QStringLiteral("avg:est");
+            v.chartGroup.clear();
+            v.chartSort = QStringLiteral("manual");
+            v.chartAutoRange = false;
+            v.chartMin = 0;
+            v.chartMax = 10;
+            v.chartRefLines = {{0, QStringLiteral("Start")}, {5, QStringLiteral("Half")}, {10, QStringLiteral("End")}};
+            v.chartColor = QStringLiteral("green");
+            v.chartDecimals = 1;
+        });
+        ChartView *c = active<ChartView>();
+        QVERIFY(c);
+        // One bar per page, in the view's order, each its own value.
+        QStringList labels, order;
+        for (const auto &p : c->m_points)
+            labels << p.label;
+        for (const RowRef &r : c->m_ctx.rows)
+            order << r.meta->title;
+        QCOMPARE(labels, order);
+        QCOMPARE(labels.size(), 5);
+        QCOMPARE(c->m_points[labels.indexOf(QStringLiteral("Delta"))].values.value(0), 8.0);
+        QCOMPARE(c->formatValue(8), QStringLiteral("8.0"));
+        QCOMPARE(c->m_yLabel, QStringLiteral("Estimate (Average)"));
+        // Sorting by value and leaving zeros out.
+        setView([](View &v) { v.chartSort = QStringLiteral("ydesc"); });
+        QCOMPARE(active<ChartView>()->m_points.first().label, QStringLiteral("Delta"));
+        // The settings survive saving.
+        const Schema saved = Schema::fromJson(m_ws->schema(m_db).toJson());
+        const View sv = saved.views.first();
+        QCOMPARE(sv.chartRefLines.size(), 3);
+        QCOMPARE(sv.chartRefLines[1].label, QStringLiteral("Half"));
+        QVERIFY(!sv.chartAutoRange);
+        QCOMPARE(sv.chartMax, 10.0);
+        QCOMPARE(sv.chartColor, QStringLiteral("green"));
+        QCOMPARE(sv.chartDecimals, 1);
+        // Every type and style draws.
+        for (const char *type : {"bar", "hbar", "line", "donut", "number"})
+            for (const char *color : {"auto", "colorful", "green"}) {
+                setView([type, color](View &v) {
+                    v.chartType = QString::fromLatin1(type);
+                    v.chartColor = QString::fromLatin1(color);
+                    v.chartSmooth = true;
+                    v.chartAxisNames = QStringLiteral("both");
+                    v.chartGrid = QStringLiteral("both");
+                    v.chartCaption = QStringLiteral("A caption");
+                });
+                QVERIFY(!active<ChartView>()->grab().isNull());
+            }
+        // Saved as images.
+        setView([](View &v) { v.chartType = QStringLiteral("hbar"); });
+        c = active<ChartView>();
+        QTemporaryDir dir;
+        QVERIFY(c->saveImage(dir.filePath(QStringLiteral("chart.png"))));
+        QCOMPARE(QImage(dir.filePath(QStringLiteral("chart.png"))).width(), c->width() * 2);
+        QVERIFY(c->saveImage(dir.filePath(QStringLiteral("chart.svg"))));
+        QFile svg(dir.filePath(QStringLiteral("chart.svg")));
+        QVERIFY(svg.open(QIODevice::ReadOnly));
+        QVERIFY(svg.readAll().contains("<svg"));
+        // A bar of one page opens it.
+        c->grab();
+        QSignalSpy opened(c, &DbView::openRow);
+        const QRectF bar = c->m_points.first().hit;
+        click(c, bar.center());
+        QCOMPARE(opened.count(), 1);
+    }
+
+    void chartSettingsLikeNotions()
+    {
+        resetView(ViewType::Chart);
+        setView([](View &v) {
+            v.chartType = QStringLiteral("hbar");
+            v.chartX = QStringLiteral("title");
+            v.chartRefLines.clear();
+        });
+        DbPopovers::showSettings(m_body, m_body->mapToGlobal(QPoint(100, 100)));
+        settle(30);
+        QWidget *pop = nullptr;
+        for (QWidget *w : QApplication::topLevelWidgets())
+            if (w->objectName() == QLatin1String("settingsPopover") && w->isVisible())
+                pop = w;
+        QVERIFY(pop);
+        // Five chart types, the current one on.
+        auto *hbar = pop->findChild<FlatButton *>(QStringLiteral("chart-type-hbar"));
+        QVERIFY(hbar && hbar->isChecked());
+        pop->findChild<FlatButton *>(QStringLiteral("chart-type-line"))->click();
+        settle(30);
+        QCOMPARE(m_body->currentView().chartType, QStringLiteral("line"));
+        pop->close();
+        // Reference lines: add one, give it a value and a label.
+        DbPopovers::showSettings(m_body, m_body->mapToGlobal(QPoint(100, 100)), QStringLiteral("chart-refs"));
+        settle(30);
+        pop = nullptr;
+        for (QWidget *w : QApplication::topLevelWidgets())
+            if (w->objectName() == QLatin1String("settingsPopover") && w->isVisible())
+                pop = w;
+        QVERIFY(pop);
+        QTRY_VERIFY(pop->findChild<FlatButton *>(QStringLiteral("chart-ref-add")));
+        pop->findChild<FlatButton *>(QStringLiteral("chart-ref-add"))->click();
+        settle(30);
+        QCOMPARE(m_body->currentView().chartRefLines.size(), 1);
+        QTRY_VERIFY(pop->findChild<QLineEdit *>(QStringLiteral("chart-ref-label")));
+        auto *label = pop->findChild<QLineEdit *>(QStringLiteral("chart-ref-label"));
+        auto *value = pop->findChild<QLineEdit *>(QStringLiteral("chart-ref-value"));
+        value->setText(QStringLiteral("4"));
+        emit value->editingFinished();
+        label->setText(QStringLiteral("Goal"));
+        emit label->editingFinished();
+        settle(30);
+        QCOMPARE(m_body->currentView().chartRefLines.first().value, 4.0);
+        QCOMPARE(m_body->currentView().chartRefLines.first().label, QStringLiteral("Goal"));
+        pop->close();
+        settle(20);
     }
 
     void searchOpensFromItsButton()

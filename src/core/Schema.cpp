@@ -488,6 +488,23 @@ QJsonObject Schema::toJson() const
         put("chartCum", v.chartCumulative, !v.chartCumulative);
         put("chartLabels", v.chartLabels, v.chartLabels);
         put("chartHideEmpty", v.chartHideEmpty, !v.chartHideEmpty);
+        put("chartDecimals", v.chartDecimals, v.chartDecimals < 0);
+        put("chartRange", QJsonArray{v.chartMin, v.chartMax}, v.chartAutoRange);
+        {
+            QJsonArray lines;
+            for (const View::RefLine &l : v.chartRefLines)
+                lines.append(QJsonObject{{QStringLiteral("v"), l.value}, {QStringLiteral("l"), l.label}});
+            put("chartRef", lines, lines.isEmpty());
+        }
+        put("chartColor", v.chartColor, v.chartColor == d.chartColor);
+        put("chartHeight", v.chartHeight, v.chartHeight == d.chartHeight);
+        put("chartGrid", v.chartGrid, v.chartGrid == d.chartGrid);
+        put("chartAxisNames", v.chartAxisNames, v.chartAxisNames == d.chartAxisNames);
+        put("chartLegend", v.chartLegend, v.chartLegend);
+        put("chartCaption", v.chartCaption, v.chartCaption.isEmpty());
+        put("chartSmooth", v.chartSmooth, !v.chartSmooth);
+        put("chartGradient", v.chartGradient, v.chartGradient);
+        put("chartDots", v.chartDots, v.chartDots);
         put("formTitle", v.formTitle, v.formTitle.isEmpty());
         put("formDesc", v.formDescription, v.formDescription.isEmpty());
         put("formRequired", QJsonArray::fromStringList(v.formRequired), v.formRequired.isEmpty());
@@ -619,6 +636,23 @@ Schema Schema::fromJson(const QJsonObject &o)
         v.chartCumulative = vo.value(QStringLiteral("chartCum")).toBool();
         v.chartLabels = vo.value(QStringLiteral("chartLabels")).toBool(true);
         v.chartHideEmpty = vo.value(QStringLiteral("chartHideEmpty")).toBool();
+        v.chartDecimals = qBound(-1, vo.value(QStringLiteral("chartDecimals")).toInt(-1), 6);
+        if (const QJsonArray range = vo.value(QStringLiteral("chartRange")).toArray(); range.size() == 2) {
+            v.chartAutoRange = false;
+            v.chartMin = range[0].toDouble();
+            v.chartMax = range[1].toDouble();
+        }
+        for (const QJsonValue &l : vo.value(QStringLiteral("chartRef")).toArray())
+            v.chartRefLines.append({l.toObject().value(QStringLiteral("v")).toDouble(), l.toObject().value(QStringLiteral("l")).toString()});
+        v.chartColor = vo.value(QStringLiteral("chartColor")).toString(d.chartColor);
+        v.chartHeight = vo.value(QStringLiteral("chartHeight")).toString(d.chartHeight);
+        v.chartGrid = vo.value(QStringLiteral("chartGrid")).toString(d.chartGrid);
+        v.chartAxisNames = vo.value(QStringLiteral("chartAxisNames")).toString(d.chartAxisNames);
+        v.chartLegend = vo.value(QStringLiteral("chartLegend")).toBool(true);
+        v.chartCaption = vo.value(QStringLiteral("chartCaption")).toString();
+        v.chartSmooth = vo.value(QStringLiteral("chartSmooth")).toBool();
+        v.chartGradient = vo.value(QStringLiteral("chartGradient")).toBool(true);
+        v.chartDots = vo.value(QStringLiteral("chartDots")).toBool(true);
         v.formTitle = vo.value(QStringLiteral("formTitle")).toString();
         v.formDescription = vo.value(QStringLiteral("formDesc")).toString();
         v.formRequired = toStringList(vo.value(QStringLiteral("formRequired")));

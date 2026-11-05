@@ -436,6 +436,10 @@ private:
 };
 
 // Charts of a database: bars, horizontal bars, lines, donuts or one number.
+// Charts like Notion's: vertical and horizontal bars, lines, a donut or one
+// number. Categories come from any property (by name: one bar per page),
+// values from a count or a number property's sum, average…; with a custom
+// range, reference lines, colours and style options. Saves as PNG or SVG.
 class ChartView : public DbView
 {
     Q_OBJECT
@@ -444,6 +448,7 @@ public:
     explicit ChartView(QWidget *parent = nullptr);
     void setContext(const ViewContext &ctx) override;
     bool showsAllRows() const override { return true; }
+    bool saveImage(const QString &path); // .png (at twice the size) or .svg
 
 protected:
     void paintEvent(QPaintEvent *) override;
@@ -461,11 +466,22 @@ private:
     };
     void compute();
     double yValue(const QList<int> &rows) const;
+    QString valueName() const;    // "Percent (Average)"
+    QString categoryName() const; // the category property's name
+    QString formatValue(double v) const;
+    QString formatTick(double v, double step) const;
+    QColor colorFor(int series, int seriesCount, int point, int pointCount) const;
+    void paintChart(QPainter &p, const QRectF &rect);
+    void paintAxes(QPainter &p, const QRectF &area);
+    void paintDonut(QPainter &p, const QRectF &area);
+    int pointAt(const QPointF &pos) const;
     QList<Point> m_points;
     QStringList m_series; // series labels (stacking by chartGroup)
     QString m_yLabel;
     double m_total = 0;
     int m_hover = -1;
+    QPointF m_donutCenter;
+    double m_donutRadius = 0;
 };
 
 // Pages one after another with their content, like a feed of posts.

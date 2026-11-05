@@ -150,7 +150,8 @@ struct View {
     QString timelineScale = QStringLiteral("month"); // day | week | biweek | month | quarter | year
     bool timelineTable = true;
     QStringList timelineTableProps;
-    // Chart
+    // Chart. The category axis is chartX (any property, the title included:
+    // one bar per page) and the value axis chartY, whichever way the bars run.
     QString chartType = QStringLiteral("bar"); // bar | hbar | line | donut | number
     QString chartX;     // group by this property
     QString chartY = QStringLiteral("count"); // count | <fn>:<prop id>
@@ -158,7 +159,26 @@ struct View {
     QString chartSort = QStringLiteral("manual"); // manual | xasc | xdesc | yasc | ydesc
     bool chartCumulative = false;
     bool chartLabels = true;
-    bool chartHideEmpty = false;
+    bool chartHideEmpty = false; // omit zero values
+    int chartDecimals = -1;      // -1: as needed
+    bool chartAutoRange = true;  // else chartMin…chartMax
+    double chartMin = 0;
+    double chartMax = 100;
+    struct RefLine {
+        double value = 0;
+        QString label;
+        bool operator==(const RefLine &o) const = default;
+    };
+    QList<RefLine> chartRefLines;
+    QString chartColor = QStringLiteral("auto"); // auto (grays) | colorful | gray | brown | orange | yellow | green | blue | purple | pink | red
+    QString chartHeight = QStringLiteral("medium"); // small | medium | large | xlarge
+    QString chartGrid = QStringLiteral("auto");     // auto | horizontal | vertical | both | none
+    QString chartAxisNames = QStringLiteral("none"); // none | x | y | both
+    bool chartLegend = true;
+    QString chartCaption;
+    bool chartSmooth = false;  // line
+    bool chartGradient = true; // line: shaded area
+    bool chartDots = true;     // line: data points
     // Form
     QString formTitle;
     QString formDescription;
